@@ -12,12 +12,22 @@ import (
 
 type Campaign struct {
 	ID             int64     `json:"id"`
+	ProductID      *int64    `json:"product_id"`
 	Name           string    `json:"name"`
 	Goal           string    `json:"goal"`
 	TargetAudience string    `json:"target_audience"`
 	Budget         float64   `json:"budget"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type Product struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Price       *float64  `json:"price"`
+	BrandInfo   string    `json:"brand_info"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type Content struct {
@@ -73,10 +83,20 @@ func main() {
 		if err := c.BodyParser(&in); err != nil || in.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 		}
+		if in.ProductID != nil {
+			var ok bool
+			if err := pool.QueryRow(c.Context(),
+				`SELECT EXISTS (SELECT 1 FROM products WHERE id=$1)`, *in.ProductID).Scan(&ok); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+			if !ok {
+				return c.Status(404).JSON(fiber.Map{"error": "product not found"})
+			}
+		}
 		err := pool.QueryRow(c.Context(),
-			`INSERT INTO campaigns (name, goal, target_audience, budget)
-			 VALUES ($1,$2,$3,$4) RETURNING id, status, created_at`,
-			in.Name, in.Goal, in.TargetAudience, in.Budget,
+			`INSERT INTO campaigns (product_id, name, goal, target_audience, budget)
+			 VALUES ($1,$2,$3,$4,$5) RETURNING id, status, created_at`,
+			in.ProductID, in.Name, in.Goal, in.TargetAudience, in.Budget,
 		).Scan(&in.ID, &in.Status, &in.CreatedAt)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -86,7 +106,7 @@ func main() {
 
 	app.Get("/campaigns", func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.Context(),
-			`SELECT id, name, goal, target_audience, budget::float8, status::text, created_at
+			`SELECT id, product_id, name, goal, target_audience, budget::float8, status::text, created_at
 			 FROM campaigns ORDER BY id DESC`)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -95,7 +115,46 @@ func main() {
 		out := []Campaign{}
 		for rows.Next() {
 			var x Campaign
-			if err := rows.Scan(&x.ID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt); err != nil {
+			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+			out = append(out, x)
+		}
+		return c.JSON(out)
+	})
+
+	// Step 1: product and brand info the AI will use (and must not invent beyond)
+	app.Post("/products", func(c *fiber.Ctx) error {
+		var in Product
+		if err := c.BodyParser(&in); err != nil || in.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+		}
+		if in.Price != nil && *in.Price < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "price must not be negative"})
+		}
+		err := pool.QueryRow(c.Context(),
+			`INSERT INTO products (name, description, price, brand_info)
+			 VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
+			in.Name, in.Description, in.Price, in.BrandInfo,
+		).Scan(&in.ID, &in.CreatedAt)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(in)
+	})
+
+	app.Get("/products", func(c *fiber.Ctx) error {
+		rows, err := pool.Query(c.Context(),
+			`SELECT id, name, description, price::float8, brand_info, created_at
+			 FROM products ORDER BY id DESC`)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		defer rows.Close()
+		out := []Product{}
+		for rows.Next() {
+			var x Product
+			if err := rows.Scan(&x.ID, &x.Name, &x.Description, &x.Price, &x.BrandInfo, &x.CreatedAt); err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
 			out = append(out, x)
@@ -193,6 +252,8 @@ func main() {
 			 WHERE id=$1 AND status='pending_approval'`,
 			"content not found or not pending approval", "rejected")
 	})
+
+	registerAIRoutes(app, pool)
 
 	log.Fatal(app.Listen(":8080"))
 }

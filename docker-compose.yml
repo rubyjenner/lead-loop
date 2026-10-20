@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-leadloop}:${POSTGRES_PASSWORD:-leadloop}@db:5432/${POSTGRES_DB:-leadloop}
       REDIS_URL: redis://redis:6379
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
     ports: ["8080:8080"]
     depends_on:
       db:
