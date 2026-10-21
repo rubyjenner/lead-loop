@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -59,6 +60,10 @@ func main() {
 	}
 	defer pool.Close()
 
+	if err := initAuth(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
+
 	app := fiber.New()
 
 	// Declare UTF-8 on JSON responses so clients like Windows PowerShell 5.1 decode Thai correctly
@@ -77,8 +82,12 @@ func main() {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
+	// Login is public; everything registered after this requires a valid token.
+	registerAuthRoutes(app, pool)
+	writers := requireRole("marketing", "admin") // sales and others are read-only
+
 	// Step 1: team creates a campaign from product info + goal + budget
-	app.Post("/campaigns", func(c *fiber.Ctx) error {
+	app.Post("/campaigns", writers, func(c *fiber.Ctx) error {
 		var in Campaign
 		if err := c.BodyParser(&in); err != nil || in.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name is required"})
@@ -87,7 +96,7 @@ func main() {
 			var ok bool
 			if err := pool.QueryRow(c.Context(),
 				`SELECT EXISTS (SELECT 1 FROM products WHERE id=$1)`, *in.ProductID).Scan(&ok); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				return serverError(c, err)
 			}
 			if !ok {
 				return c.Status(404).JSON(fiber.Map{"error": "product not found"})
@@ -99,7 +108,7 @@ func main() {
 			in.ProductID, in.Name, in.Goal, in.TargetAudience, in.Budget,
 		).Scan(&in.ID, &in.Status, &in.CreatedAt)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		return c.Status(201).JSON(in)
 	})
@@ -109,14 +118,14 @@ func main() {
 			`SELECT id, product_id, name, goal, target_audience, budget::float8, status::text, created_at
 			 FROM campaigns ORDER BY id DESC`)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		defer rows.Close()
 		out := []Campaign{}
 		for rows.Next() {
 			var x Campaign
 			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				return serverError(c, err)
 			}
 			out = append(out, x)
 		}
@@ -124,7 +133,7 @@ func main() {
 	})
 
 	// Step 1: product and brand info the AI will use (and must not invent beyond)
-	app.Post("/products", func(c *fiber.Ctx) error {
+	app.Post("/products", writers, func(c *fiber.Ctx) error {
 		var in Product
 		if err := c.BodyParser(&in); err != nil || in.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name is required"})
@@ -138,7 +147,7 @@ func main() {
 			in.Name, in.Description, in.Price, in.BrandInfo,
 		).Scan(&in.ID, &in.CreatedAt)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		return c.Status(201).JSON(in)
 	})
@@ -148,14 +157,14 @@ func main() {
 			`SELECT id, name, description, price::float8, brand_info, created_at
 			 FROM products ORDER BY id DESC`)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		defer rows.Close()
 		out := []Product{}
 		for rows.Next() {
 			var x Product
 			if err := rows.Scan(&x.ID, &x.Name, &x.Description, &x.Price, &x.BrandInfo, &x.CreatedAt); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				return serverError(c, err)
 			}
 			out = append(out, x)
 		}
@@ -163,7 +172,7 @@ func main() {
 	})
 
 	// Step 3: AI (or a person, for now) creates a content draft for a campaign
-	app.Post("/campaigns/:id/contents", func(c *fiber.Ctx) error {
+	app.Post("/campaigns/:id/contents", writers, func(c *fiber.Ctx) error {
 		campaignID, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
@@ -178,7 +187,7 @@ func main() {
 		var exists bool
 		if err := pool.QueryRow(c.Context(),
 			`SELECT EXISTS (SELECT 1 FROM campaigns WHERE id=$1)`, campaignID).Scan(&exists); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		if !exists {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
@@ -187,7 +196,7 @@ func main() {
 			`INSERT INTO contents (campaign_id, channel, body) VALUES ($1,$2,$3)
 			 RETURNING `+contentCols, campaignID, in.Channel, in.Body))
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		return c.Status(201).JSON(out)
 	})
@@ -200,14 +209,14 @@ func main() {
 		rows, err := pool.Query(c.Context(),
 			`SELECT `+contentCols+` FROM contents WHERE campaign_id=$1 ORDER BY id`, campaignID)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		defer rows.Close()
 		out := []Content{}
 		for rows.Next() {
 			x, err := scanContent(rows)
 			if err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				return serverError(c, err)
 			}
 			out = append(out, x)
 		}
@@ -215,42 +224,37 @@ func main() {
 	})
 
 	// draft or rejected -> pending_approval
-	app.Post("/contents/:id/submit", func(c *fiber.Ctx) error {
+	app.Post("/contents/:id/submit", writers, func(c *fiber.Ctx) error {
 		return setContentStatus(c, pool,
 			`UPDATE contents SET status='pending_approval'
 			 WHERE id=$1 AND status IN ('draft','rejected')`,
-			"content not found or not in draft/rejected status", "pending_approval")
+			"content not found or not in draft/rejected status", "pending_approval", "content_submitted")
 	})
 
 	// Step 4: a human approves content before it can be published
-	app.Post("/contents/:id/approve", func(c *fiber.Ctx) error {
-		var in struct {
-			ApprovedBy string `json:"approved_by"`
-		}
-		if err := c.BodyParser(&in); err != nil || in.ApprovedBy == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "approved_by is required"})
-		}
+	app.Post("/contents/:id/approve", writers, func(c *fiber.Ctx) error {
 		id, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid content id"})
 		}
 		tag, err := pool.Exec(c.Context(),
 			`UPDATE contents SET status='approved', approved_by=$1, approved_at=now()
-			 WHERE id=$2 AND status='pending_approval'`, in.ApprovedBy, id)
+			 WHERE id=$2 AND status='pending_approval'`, currentUser(c).Email, id)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		if tag.RowsAffected() == 0 {
 			return c.Status(409).JSON(fiber.Map{"error": "content not found or not pending approval"})
 		}
+		auditUser(c, pool, "content_approved", "content:"+strconv.Itoa(id), "")
 		return c.JSON(fiber.Map{"status": "approved"})
 	})
 
-	app.Post("/contents/:id/reject", func(c *fiber.Ctx) error {
+	app.Post("/contents/:id/reject", writers, func(c *fiber.Ctx) error {
 		return setContentStatus(c, pool,
 			`UPDATE contents SET status='rejected'
 			 WHERE id=$1 AND status='pending_approval'`,
-			"content not found or not pending approval", "rejected")
+			"content not found or not pending approval", "rejected", "content_rejected")
 	})
 
 	registerAIRoutes(app, pool)
@@ -258,17 +262,18 @@ func main() {
 	log.Fatal(app.Listen(":8080"))
 }
 
-func setContentStatus(c *fiber.Ctx, pool *pgxpool.Pool, query, conflictMsg, status string) error {
+func setContentStatus(c *fiber.Ctx, pool *pgxpool.Pool, query, conflictMsg, status, auditAction string) error {
 	id, err := c.ParamsInt("id")
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid content id"})
 	}
 	tag, err := pool.Exec(c.Context(), query, id)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return serverError(c, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return c.Status(409).JSON(fiber.Map{"error": conflictMsg})
 	}
+	auditUser(c, pool, auditAction, "content:"+strconv.Itoa(id), "")
 	return c.JSON(fiber.Map{"status": status})
 }

@@ -136,10 +136,11 @@ func campaignFacts(ctx context.Context, pool *pgxpool.Pool, id int) (name, facts
 }
 
 func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
+	writers := requireRole("marketing", "admin")
 	mockMode := func() bool { return os.Getenv("ANTHROPIC_API_KEY") == "" }
 
 	// Step 2: AI plans the campaign (saved to campaigns.plan, status draft -> planned)
-	app.Post("/campaigns/:id/plan", func(c *fiber.Ctx) error {
+	app.Post("/campaigns/:id/plan", writers, func(c *fiber.Ctx) error {
 		id, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
@@ -149,7 +150,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		plan, err := callClaude(c.UserContext(), systemPrompt,
 			"วางแผนแคมเปญสั้นๆ ประกอบด้วย กลุ่มลูกค้าย่อย ช่องทาง ข้อความหลัก และตัวชี้วัดที่ใช้วัดผล\n\n"+facts,
@@ -161,13 +162,13 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			`UPDATE campaigns SET plan=$1,
 			   status = CASE WHEN status='draft' THEN 'planned'::campaign_status ELSE status END
 			 WHERE id=$2`, plan, id); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 		return c.JSON(fiber.Map{"campaign_id": id, "plan": plan, "mock": mockMode()})
 	})
 
 	// Step 3: AI drafts content variants; saved as 'draft' (a human must still submit + approve)
-	app.Post("/campaigns/:id/generate-contents", func(c *fiber.Ctx) error {
+	app.Post("/campaigns/:id/generate-contents", writers, func(c *fiber.Ctx) error {
 		id, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
@@ -193,7 +194,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return serverError(c, err)
 		}
 
 		mock := make([]string, in.Count)
@@ -219,7 +220,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 				`INSERT INTO contents (campaign_id, channel, body) VALUES ($1,$2,$3)
 				 RETURNING `+contentCols, id, in.Channel, part))
 			if err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+				return serverError(c, err)
 			}
 			out = append(out, x)
 		}

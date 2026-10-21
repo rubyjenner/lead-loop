@@ -35,7 +35,7 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 
 ## สถานะงาน (อัปเดตทุกครั้งก่อน commit)
 
-อัปเดตล่าสุด: 20 ต.ค. 2569 (เย็น) · เอกสารดีไซน์ฉบับปรับปรุง: AI_Agent_Draft_Design_v2.pdf
+อัปเดตล่าสุด: 21 ต.ค. 2569 (บ่าย) · เอกสารดีไซน์ฉบับปรับปรุง: AI_Agent_Draft_Design_v2.pdf
 
 **ทำเสร็จแล้ว** (ทดสอบแล้วบนเครื่อง)
 - schema ฐานข้อมูล (`db/init.sql`), docker-compose (PostgreSQL, Redis, API), `go.sum`
@@ -44,38 +44,69 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - Content flow: `POST/GET /campaigns/:id/contents`, `POST /contents/:id/submit`, `/approve`, `/reject` (รวมกรณี error 404/409)
 - AI (โหมดจำลองเมื่อไม่มี API key): `POST /campaigns/:id/plan`, `POST /campaigns/:id/generate-contents`
 - JSON ตอบกลับเป็น UTF-8 (ภาษาไทยแสดงถูกต้อง)
+- ล็อกอิน (JWT, หมดอายุ 8 ชม.) + แยกสิทธิ์ admin / marketing / sales: ทุก endpoint ยกเว้น `/health` และ `/auth/login` ต้องมี token
+- รหัสผ่านเก็บแบบ bcrypt, ขั้นต่ำ 8 ตัวอักษร; ล็อกอินผิดได้ไม่เกิน 5 ครั้ง/15 นาที/IP (เกินแล้วได้ 429)
+- ผู้อนุมัติ (`approved_by`) มาจากผู้ที่ล็อกอิน ไม่รับจาก body; พอร์ต DB/Redis เปิดเฉพาะ localhost; error ภายในไม่รั่วไปถึง client
+- ทดสอบแล้ว: ไม่มี/token ผิด → 401, sales สร้างแคมเปญ → 403, ล็อกอินผิดเกินลิมิต → 429
+- จัดการผู้ใช้: ปิด/เปิดผู้ใช้และเปลี่ยน role (`PATCH /users/:id`), รีเซ็ตรหัสผ่านโดย admin, ห้ามปิด/ลดสิทธิ์ admin คนสุดท้าย; ทุกคำขอตรวจ role/สถานะล่าสุดจากฐานข้อมูล (ปิดผู้ใช้แล้วใช้ token เดิมไม่ได้ทันที)
+- ผู้ใช้เปลี่ยนรหัสผ่านเอง `POST /auth/password`; ผู้ใช้ที่ admin สร้าง/รีเซ็ตต้องเปลี่ยนรหัสก่อนใช้งานอื่น
+- audit log (`GET /audit-log` เฉพาะ admin): ล็อกอินสำเร็จ/ล้มเหลว, สร้าง/แก้ผู้ใช้, เปลี่ยน/รีเซ็ตรหัสผ่าน, ส่ง/อนุมัติ/ปฏิเสธคอนเทนต์ (ไม่เก็บรหัสผ่านหรือ token)
 
 **กำลังทำ**
-- ยังไม่มี (งานถัดไปเริ่ม 21 ต.ค.)
+- ยังไม่มี (งานถัดไปเริ่ม 22 ต.ค.)
 
 **ขั้นต่อไป** (ตามเอกสารดีไซน์ฉบับปรับปรุง 20 ต.ค.)
-1. 21 ต.ค.: ระบบล็อกอินและแยกสิทธิ์ (admin / การตลาด / ทีมขาย) ผู้อนุมัติมาจากผู้ที่ล็อกอิน และปิดช่องโหว่ (พอร์ต DB/Redis, ข้อความ error)
-2. 22 ถึง 23 ต.ค.: AI สำรอง (Claude → Gemini → กฎ/เทมเพลต → คิว Redis), บันทึกการใช้งาน `ai_usage` และโควตา
-3. 26 ต.ค.: Postman collection และเอกสาร API
-4. ขอจากบริษัท: Claude API key (หรือยืนยันผู้ให้บริการ AI), LINE OA + Messaging API, server + โดเมน, นโยบายความเป็นส่วนตัว (PDPA)
-5. พ.ย. เป็นต้นไป: ต่อ AI จริง, Frontend (React), LINE พร้อมขอความยินยอม PDPA, ให้คะแนนลีดด้วยกฎ
+1. 22 ถึง 23 ต.ค.: AI สำรอง (Claude → Gemini → กฎ/เทมเพลต → คิว Redis), บันทึกการใช้งาน `ai_usage` และโควตา
+2. 26 ต.ค.: Postman collection และเอกสาร API
+3. ขอจากบริษัท: Claude API key (หรือยืนยันผู้ให้บริการ AI), LINE OA + Messaging API, server + โดเมน, นโยบายความเป็นส่วนตัว (PDPA)
+4. พ.ย. เป็นต้นไป: ต่อ AI จริง, Frontend (React), LINE พร้อมขอความยินยอม PDPA, ให้คะแนนลีดด้วยกฎ
 
 **ปัญหาที่ค้าง / ข้อจำกัดปัจจุบัน**
 - ยังไม่ได้ Claude API key (`ANTHROPIC_API_KEY` ว่างอยู่) AI จึงทำงานในโหมดจำลอง
 - ยังไม่มี AI สำรองจริง, `ai_usage`/โควตา และขั้นตอน PDPA (วางแผนไว้แล้ว ดูขั้นต่อไป)
-- ยังไม่มีระบบล็อกอิน: ทุก endpoint เปิดโล่ง และ `approved_by` เป็นข้อความที่ส่งมาเอง ห้ามนำไปใช้จริงก่อนทำล็อกอิน
-- พอร์ต 5432 (DB) และ 6379 (Redis) เปิดสู่ภายนอก ใช้เฉพาะตอนพัฒนา
+- ยังไม่มี HTTPS (จะทำพร้อม deploy ด้วย Caddy) ห้ามนำไปใช้จริงบนอินเทอร์เน็ตก่อนมี HTTPS
+- ลิมิตล็อกอินเก็บในหน่วยความจำของ API: รีสตาร์ท API แล้วนับใหม่ (`docker compose restart api`) และยังไม่มีระบบเปลี่ยน/รีเซ็ตรหัสผ่าน
 
 ## Run
 
     cp .env.example .env
+    # แก้ .env: ตั้ง JWT_SECRET (32 ตัวขึ้นไป), ADMIN_EMAIL, ADMIN_PASSWORD (8 ถึง 72 ตัว)
     docker compose up --build
 
 ใน PowerShell ใช้ `Copy-Item .env.example .env` แทน `cp`
+สร้าง JWT_SECRET ใน PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | % {[char]$_})`
+ADMIN_EMAIL / ADMIN_PASSWORD ใช้สร้างแอดมินคนแรกตอนตารางผู้ใช้ยังว่างเท่านั้น (ห้าม commit `.env`)
+
+## Login และสิทธิ์
+
+| Role | ทำอะไรได้ |
+|---|---|
+| admin | ทุกอย่าง + จัดการผู้ใช้ (`POST/GET /users`, `PATCH /users/:id`, `POST /users/:id/reset-password`) + ดู `GET /audit-log` |
+| marketing | สร้าง/แก้แคมเปญ สินค้า คอนเทนต์ เรียก AI ส่งอนุมัติ/อนุมัติ/ปฏิเสธ |
+| sales | ดูข้อมูล (GET) เท่านั้น (สิทธิ์ของลีดจะเพิ่มตอนทำ leads) |
+
+PowerShell (ใช้ `Read-Host` เพื่อไม่พิมพ์รหัสผ่านลงในคำสั่ง/ประวัติ):
+
+    $body = @{ email='admin@example.com'; password=(Read-Host 'password') } | ConvertTo-Json
+    $r = Invoke-RestMethod -Method Post -Uri http://localhost:8080/auth/login -ContentType 'application/json' -Body $body
+    $PSDefaultParameterValues['Invoke-RestMethod:Headers'] = @{ Authorization = "Bearer $($r.token)" }
+    Invoke-RestMethod http://localhost:8080/auth/me
+
+สร้างผู้ใช้ใหม่ (admin เท่านั้น):
+
+    Invoke-RestMethod -Method Post -Uri http://localhost:8080/users -ContentType 'application/json' `
+      -Body '{"email":"sale1@example.com","password":"ตั้งรหัสผ่านที่นี่","role":"sales"}'
+
+คำสั่งด้านล่างทั้งหมดต้องล็อกอินและตั้ง header ตามด้านบนก่อน (macOS/Linux ใช้ `-H "Authorization: Bearer $TOKEN"`)
 
 ## Try the first endpoints
 
 macOS / Linux / Git Bash:
 
     curl localhost:8080/health
-    curl -X POST localhost:8080/campaigns -H 'Content-Type: application/json' \
+    curl -X POST localhost:8080/campaigns -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
       -d '{"name":"Launch","goal":"50 leads","target_audience":"students","budget":10000}'
-    curl localhost:8080/campaigns
+    curl -H "Authorization: Bearer $TOKEN" localhost:8080/campaigns
 
 Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invoke-WebRequest` จึงใช้ cmdlet แทน):
 
@@ -93,8 +124,7 @@ Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invok
       -ContentType 'application/json' -Body '{"channel":"line","body":"โปรโมชันเปิดตัว"}'
     Invoke-RestMethod http://localhost:8080/campaigns/1/contents
     Invoke-RestMethod -Method Post http://localhost:8080/contents/1/submit
-    Invoke-RestMethod -Method Post -Uri http://localhost:8080/contents/1/approve `
-      -ContentType 'application/json' -Body '{"approved_by":"mentor"}'
+    Invoke-RestMethod -Method Post http://localhost:8080/contents/1/approve   # ผู้อนุมัติมาจาก token
 
 ทดสอบ products:
 
@@ -126,8 +156,8 @@ Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invok
 
 ## Structure
 
-- db/init.sql: schema (products, campaigns, contents, leads, messages, metrics)
-- backend/: Go (Fiber) API
+- db/init.sql: schema (products, campaigns, contents, leads, messages, metrics); ตาราง `users` สร้างตอน API เริ่มทำงาน
+- backend/: Go (Fiber) API (`main.go` routes, `auth.go` login/roles, `ai.go` AI)
 - docker-compose.yml: PostgreSQL, Redis, API
 
 ## แนวปฏิบัติเมื่อใช้ AI ช่วยเขียนโค้ด
@@ -139,7 +169,7 @@ Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invok
 
 ## Next
 
-1. Login and roles, AI fallback (Claude → Gemini → rules/templates), usage tracking and quotas
+1. AI fallback (Claude → Gemini → rules/templates), usage tracking and quotas
 2. Claude/Gemini API: campaign plan and content drafts (real calls once a key is available)
 3. Leads and chat (LINE) with PDPA consent, rule-based lead scoring
 4. React + Vite frontend
