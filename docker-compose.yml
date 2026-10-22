@@ -28,6 +28,11 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AI_PROVIDERS: ${AI_PROVIDERS:-claude,gemini}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      PROXY_HEADER: ${PROXY_HEADER:-}
     ports: ["8080:8080"]
     depends_on:
       db:

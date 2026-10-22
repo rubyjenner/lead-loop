@@ -42,7 +42,7 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - API: `GET /health`, `POST/GET /campaigns`
 - Products: `POST/GET /products`, แคมเปญผูกสินค้าได้ด้วย `product_id`
 - Content flow: `POST/GET /campaigns/:id/contents`, `POST /contents/:id/submit`, `/approve`, `/reject` (รวมกรณี error 404/409)
-- AI (โหมดจำลองเมื่อไม่มี API key): `POST /campaigns/:id/plan`, `POST /campaigns/:id/generate-contents`
+- AI: `POST /campaigns/:id/plan`, `POST /campaigns/:id/generate-contents` ลองตามลำดับ Claude → Gemini → อัลกอริทึมกฎ/เทมเพลต (ไม่มีทางล้ม) และบันทึกผู้สร้างใน `generated_by` (`claude` / `gemini` / `template` / `human`)
 - JSON ตอบกลับเป็น UTF-8 (ภาษาไทยแสดงถูกต้อง)
 - ล็อกอิน (JWT, หมดอายุ 8 ชม.) + แยกสิทธิ์ admin / marketing / sales: ทุก endpoint ยกเว้น `/health` และ `/auth/login` ต้องมี token
 - รหัสผ่านเก็บแบบ bcrypt, ขั้นต่ำ 8 ตัวอักษร; ล็อกอินผิดได้ไม่เกิน 5 ครั้ง/15 นาที/IP (เกินแล้วได้ 429)
@@ -50,22 +50,24 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - ทดสอบแล้ว: ไม่มี/token ผิด → 401, sales สร้างแคมเปญ → 403, ล็อกอินผิดเกินลิมิต → 429
 - จัดการผู้ใช้: ปิด/เปิดผู้ใช้และเปลี่ยน role (`PATCH /users/:id`), รีเซ็ตรหัสผ่านโดย admin, ห้ามปิด/ลดสิทธิ์ admin คนสุดท้าย; ทุกคำขอตรวจ role/สถานะล่าสุดจากฐานข้อมูล (ปิดผู้ใช้แล้วใช้ token เดิมไม่ได้ทันที)
 - ผู้ใช้เปลี่ยนรหัสผ่านเอง `POST /auth/password`; ผู้ใช้ที่ admin สร้าง/รีเซ็ตต้องเปลี่ยนรหัสก่อนใช้งานอื่น
+- ความปลอดภัยเพิ่ม: security headers (helmet), จำกัดขนาด request 1 MB, ลิมิตล็อกอินตามอีเมล (10 ครั้ง/15 นาที) เพิ่มจากตาม IP, CORS ปิดไว้จนกว่าจะตั้ง `CORS_ORIGINS`
+- กฎบริษัท: ผู้อนุมัติคอนเทนต์ต้องเป็นคนละคนกับผู้สร้าง (`created_by`) ถ้าอนุมัติของตัวเองจะได้ 403 และบันทึกใน audit log; ก่อนใช้ข้อมูลจริงต้องขออนุมัติตามนโยบาย PDPA จาก Deputy Manager
 - audit log (`GET /audit-log` เฉพาะ admin): ล็อกอินสำเร็จ/ล้มเหลว, สร้าง/แก้ผู้ใช้, เปลี่ยน/รีเซ็ตรหัสผ่าน, ส่ง/อนุมัติ/ปฏิเสธคอนเทนต์ (ไม่เก็บรหัสผ่านหรือ token)
 
 **กำลังทำ**
 - ยังไม่มี (งานถัดไปเริ่ม 22 ต.ค.)
 
 **ขั้นต่อไป** (ตามเอกสารดีไซน์ฉบับปรับปรุง 20 ต.ค.)
-1. 22 ถึง 23 ต.ค.: AI สำรอง (Claude → Gemini → กฎ/เทมเพลต → คิว Redis), บันทึกการใช้งาน `ai_usage` และโควตา
+1. 22 ต.ค.: AI สำรอง Claude → Gemini → เทมเพลต (เสร็จแล้ว) · 23 ต.ค.: `ai_usage`/โควตา และคิว Redis
 2. 26 ต.ค.: Postman collection และเอกสาร API
 3. ขอจากบริษัท: Claude API key (หรือยืนยันผู้ให้บริการ AI), LINE OA + Messaging API, server + โดเมน, นโยบายความเป็นส่วนตัว (PDPA)
 4. พ.ย. เป็นต้นไป: ต่อ AI จริง, Frontend (React), LINE พร้อมขอความยินยอม PDPA, ให้คะแนนลีดด้วยกฎ
 
 **ปัญหาที่ค้าง / ข้อจำกัดปัจจุบัน**
-- ยังไม่ได้ Claude API key (`ANTHROPIC_API_KEY` ว่างอยู่) AI จึงทำงานในโหมดจำลอง
-- ยังไม่มี AI สำรองจริง, `ai_usage`/โควตา และขั้นตอน PDPA (วางแผนไว้แล้ว ดูขั้นต่อไป)
+- ยังไม่ได้ API key ของ Claude/Gemini: ตอนนี้ AI จึงตกไปใช้เทมเพลต (`generated_by: template`) จนกว่าจะใส่ key ใน `.env`
+- ยังไม่มี `ai_usage`/โควตา, คิว Redis ลองใหม่ และขั้นตอน PDPA (วางแผนไว้แล้ว ดูขั้นต่อไป)
 - ยังไม่มี HTTPS (จะทำพร้อม deploy ด้วย Caddy) ห้ามนำไปใช้จริงบนอินเทอร์เน็ตก่อนมี HTTPS
-- ลิมิตล็อกอินเก็บในหน่วยความจำของ API: รีสตาร์ท API แล้วนับใหม่ (`docker compose restart api`) และยังไม่มีระบบเปลี่ยน/รีเซ็ตรหัสผ่าน
+- ลิมิตล็อกอินเก็บในหน่วยความจำของ API: รีสตาร์ท API แล้วนับใหม่ (`docker compose restart api`) จะย้ายไป Redis ตอน deploy; ตั้ง `PROXY_HEADER` เมื่ออยู่หลัง Caddy เพื่อให้ได้ IP จริง; ที่เก็บ token ฝั่งหน้าเว็บ (cookie httpOnly หรือ localStorage) ตัดสินใจตอนทำ React
 
 ## Run
 
@@ -135,12 +137,23 @@ Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invok
     Invoke-RestMethod -Method Post -Uri http://localhost:8080/campaigns `
       -ContentType 'application/json' -Body '{"name":"Phone sale","product_id":1,"budget":5000}'
 
-ทดสอบ AI (โหมดจำลอง ถ้า `ANTHROPIC_API_KEY` ว่าง ผลจะขึ้น `"mock": true`):
+ทดสอบ AI (ถ้ายังไม่มี key ผลจะมี `"generated_by": "template"`; ตั้ง `AI_PROVIDERS=template` เพื่อปิด AI ภายนอกทั้งหมด):
 
     Invoke-RestMethod -Method Post http://localhost:8080/campaigns/1/plan
     Invoke-RestMethod -Method Post -Uri http://localhost:8080/campaigns/1/generate-contents `
       -ContentType 'application/json' -Body '{"channel":"line","count":3}'
     Invoke-RestMethod http://localhost:8080/campaigns/1/contents
+
+ทดสอบระบบทั้งชุดอัตโนมัติ (ล็อกอิน สิทธิ์ เปลี่ยนรหัส ปิดผู้ใช้ audit log และ AI) ต้องรัน `docker compose up -d` ก่อน:
+
+    .\scripts\smoke-test.ps1              # ถามรหัสผ่าน admin
+    .\scripts\smoke-test.ps1 -RateLimit   # ทดสอบลิมิตล็อกอินด้วย (IP จะถูกบล็อก 15 นาที ให้ docker compose restart api หลังทดสอบ)
+
+สคริปต์สร้างผู้ใช้ `smoke-*@example.com` แล้วปิดไว้ท้ายการทดสอบ ใช้กับฐานข้อมูลสำหรับพัฒนาเท่านั้น
+
+รัน unit test (ไม่ต้องมี Go ในเครื่อง ใช้ Docker):
+
+    docker run --rm -v "${PWD}/backend:/app" -w /app golang:1.22 sh -c "go mod tidy && go test ./..."
 
 ## ตรวจปัญหาเบื้องต้น
 
@@ -150,7 +163,7 @@ Windows PowerShell (`curl` ใน PowerShell เป็น alias ของ `Invok
 
 ## หลักการออกแบบสำคัญ (รายละเอียดในเอกสาร Draft Design หัวข้อ 8 และ 9)
 
-- **AI สำรอง:** ถ้า AI ล่ม ช้า หรือเต็มลิมิต ระบบตกไปใช้ AI ตัวที่สอง แล้วอัลกอริทึมกฎ/เทมเพลต แล้วเข้าคิว Redis ลองใหม่ ทุกผลลัพธ์บันทึก `generated_by` และต้องผ่านการอนุมัติจากคนเหมือนกัน (โหมดจำลอง `mock` ที่มีอยู่ตอนนี้ใช้ทดสอบเท่านั้น ไม่ใช่ตัวสำรอง)
+- **AI สำรอง:** ถ้า AI ล่ม ช้า หรือเต็มลิมิต ระบบตกไปใช้ AI ตัวที่สอง แล้วอัลกอริทึมกฎ/เทมเพลต แล้วเข้าคิว Redis ลองใหม่ ทุกผลลัพธ์บันทึก `generated_by` และต้องผ่านการอนุมัติจากคนเหมือนกัน (ทำแล้วถึงขั้นเทมเพลต ส่วนคิว Redis ทำ 23 ต.ค.)
 - **ลิมิตและค่าใช้จ่าย AI:** ตั้งเพดานที่ผู้ให้บริการ, บันทึกการใช้งาน (`ai_usage`), โควตาต่อวัน, จำกัดความยาวคำตอบ, เก็บผลลัพธ์ไว้ไม่เรียกซ้ำโดยไม่จำเป็น, ให้คะแนนลีดด้วยกฎเป็นหลัก
 - **PDPA:** ขอความยินยอมก่อนเก็บข้อมูลและก่อนส่งให้ AI, เก็บหลักฐานความยินยอม, แยกความยินยอมด้านการตลาด, มีช่องทางลบ/ส่งออกข้อมูลลีด, ปกปิดข้อมูลก่อนส่งให้ AI ภายนอก, ไม่บันทึกข้อมูลลูกค้าลง log ช่วงพัฒนาใช้ข้อมูลจำลองเท่านั้น (ฝ่ายกฎหมายของบริษัทตรวจก่อนใช้งานจริง)
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -23,6 +24,7 @@ const (
 	tokenTTL         = 8 * time.Hour
 	loginMaxAttempts = 5
 	loginWindow      = 15 * time.Minute
+	loginMaxPerEmail = 10
 	minPasswordLen   = 8
 	maxPasswordLen   = 72 // bcrypt limit
 )
@@ -237,6 +239,20 @@ func auditUser(c *fiber.Ctx, pool *pgxpool.Pool, action, target, detail string) 
 	audit(c, pool, currentUserID(c), email, action, target, detail)
 }
 
+// loginEmailKey is the limiter key for POST /auth/login: the email in the body (falls back to the IP
+// when the body has no usable email, so malformed requests do not share one global bucket).
+func loginEmailKey(c *fiber.Ctx) string {
+	var in struct {
+		Email string `json:"email"`
+	}
+	_ = json.Unmarshal(c.Body(), &in)
+	email := strings.ToLower(strings.TrimSpace(in.Email))
+	if email == "" {
+		return "ip:" + c.IP()
+	}
+	return "email:" + trunc(email, 254)
+}
+
 // registerAuthRoutes registers the public login route, then requires auth for everything
 // registered after it (Fiber runs handlers in registration order).
 func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
@@ -249,6 +265,14 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		Max:                    loginMaxAttempts,
 		Expiration:             loginWindow,
 		SkipSuccessfulRequests: true,
+		LimitReached:           tooMany,
+	}), limiter.New(limiter.Config{
+		// Also count failures per email (10 per 15 min), so a password guesser who changes IP is still
+		// stopped. The limit is higher than the per-IP one so a stranger cannot easily lock someone out.
+		Max:                    loginMaxPerEmail,
+		Expiration:             loginWindow,
+		SkipSuccessfulRequests: true,
+		KeyGenerator:           loginEmailKey,
 		LimitReached:           tooMany,
 	}), func(c *fiber.Ctx) error {
 		var in struct {
@@ -481,8 +505,8 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		}
 		if _, err = tx.Exec(ctx,
 			`UPDATE users SET role=$1, active=$2,
-		   token_version = token_version + CASE WHEN $4 THEN 1 ELSE 0 END
-		 WHERE id=$3`, newRole, newActive, id, curActive && !newActive); err != nil {
+			   token_version = token_version + CASE WHEN $4 THEN 1 ELSE 0 END
+			 WHERE id=$3`, newRole, newActive, id, curActive && !newActive); err != nil {
 			return serverError(c, err)
 		}
 		if err = tx.Commit(ctx); err != nil {

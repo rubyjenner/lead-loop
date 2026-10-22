@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -32,23 +37,25 @@ type Product struct {
 }
 
 type Content struct {
-	ID         int64      `json:"id"`
-	CampaignID int64      `json:"campaign_id"`
-	Channel    string     `json:"channel"`
-	Body       string     `json:"body"`
-	Status     string     `json:"status"`
-	ApprovedBy *string    `json:"approved_by"`
-	ApprovedAt *time.Time `json:"approved_at"`
-	PublishAt  *time.Time `json:"publish_at"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID          int64      `json:"id"`
+	CampaignID  int64      `json:"campaign_id"`
+	Channel     string     `json:"channel"`
+	Body        string     `json:"body"`
+	Status      string     `json:"status"`
+	ApprovedBy  *string    `json:"approved_by"`
+	ApprovedAt  *time.Time `json:"approved_at"`
+	PublishAt   *time.Time `json:"publish_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	GeneratedBy string     `json:"generated_by"` // human, claude, gemini or template
+	CreatedBy   *string    `json:"created_by"`   // who created it (the approver must be someone else)
 }
 
-const contentCols = `id, campaign_id, channel, body, status::text, approved_by, approved_at, publish_at, created_at`
+const contentCols = `id, campaign_id, channel, body, status::text, approved_by, approved_at, publish_at, created_at, generated_by, created_by`
 
 func scanContent(row interface{ Scan(...any) error }) (Content, error) {
 	var x Content
 	err := row.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status,
-		&x.ApprovedBy, &x.ApprovedAt, &x.PublishAt, &x.CreatedAt)
+		&x.ApprovedBy, &x.ApprovedAt, &x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy)
 	return x, err
 }
 
@@ -63,8 +70,28 @@ func main() {
 	if err := initAuth(ctx, pool); err != nil {
 		log.Fatal(err)
 	}
+	if err := initAI(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
 
-	app := fiber.New()
+	cfg := fiber.Config{BodyLimit: 1 * 1024 * 1024} // reject request bodies over 1 MB
+	// Only set PROXY_HEADER (e.g. X-Forwarded-For) when the API is reachable ONLY through a reverse proxy;
+	// otherwise clients could fake their IP and dodge the login limiter.
+	if h := os.Getenv("PROXY_HEADER"); h != "" {
+		cfg.ProxyHeader = h
+	}
+	app := fiber.New(cfg)
+
+	app.Use(helmet.New()) // security headers
+	// CORS is off unless CORS_ORIGINS lists the allowed web origins (comma separated, no wildcard).
+	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins: origins,
+			AllowMethods: "GET,POST,PATCH,OPTIONS",
+			AllowHeaders: "Authorization,Content-Type",
+			MaxAge:       600,
+		}))
+	}
 
 	// Declare UTF-8 on JSON responses so clients like Windows PowerShell 5.1 decode Thai correctly
 	app.Use(func(c *fiber.Ctx) error {
@@ -193,8 +220,8 @@ func main() {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
 		out, err := scanContent(pool.QueryRow(c.Context(),
-			`INSERT INTO contents (campaign_id, channel, body) VALUES ($1,$2,$3)
-			 RETURNING `+contentCols, campaignID, in.Channel, in.Body))
+			`INSERT INTO contents (campaign_id, channel, body, created_by) VALUES ($1,$2,$3,$4)
+			 RETURNING `+contentCols, campaignID, in.Channel, in.Body, currentUser(c).Email))
 		if err != nil {
 			return serverError(c, err)
 		}
@@ -236,6 +263,19 @@ func main() {
 		id, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid content id"})
+		}
+		// Company rule: the approver must be a different person from the creator of the content.
+		var creator *string
+		err = pool.QueryRow(c.Context(), `SELECT created_by FROM contents WHERE id=$1`, id).Scan(&creator)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(409).JSON(fiber.Map{"error": "content not found or not pending approval"})
+		}
+		if err != nil {
+			return serverError(c, err)
+		}
+		if creator != nil && strings.EqualFold(*creator, currentUser(c).Email) {
+			auditUser(c, pool, "content_approve_denied", "content:"+strconv.Itoa(id), "approver is the creator")
+			return c.Status(403).JSON(fiber.Map{"error": "approver must be a different person from the content creator"})
 		}
 		tag, err := pool.Exec(c.Context(),
 			`UPDATE contents SET status='approved', approved_by=$1, approved_at=now()

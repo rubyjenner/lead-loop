@@ -1,16 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
@@ -22,152 +16,78 @@ const systemPrompt = `คุณเป็นผู้ช่วยการตล�
 กฎ: ใช้เฉพาะข้อมูลสินค้าและแบรนด์ที่ให้มาเท่านั้น ห้ามแต่งราคา โปรโมชัน หรือคุณสมบัติที่ไม่มีในข้อมูล
 ห้ามโฆษณาเกินจริง ถ้าข้อมูลไม่พอให้บอกว่าต้องการข้อมูลเพิ่มอะไร`
 
-var httpClient = &http.Client{Timeout: 60 * time.Second}
-
-// callClaude calls the Claude Messages API. With no ANTHROPIC_API_KEY it returns mock
-// (development mode), so the whole flow can be tested before a key is available.
-// Retries on network errors, 429 and 5xx. Never logs prompts (may contain customer data).
-func callClaude(ctx context.Context, system, user, mock string) (string, error) {
-	key := os.Getenv("ANTHROPIC_API_KEY")
-	if key == "" {
-		return mock, nil
+// initAI adds the columns that record what produced each AI result (generated_by).
+func initAI(ctx context.Context, pool *pgxpool.Pool) error {
+	for _, s := range []string{
+		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS generated_by TEXT NOT NULL DEFAULT 'human'`,
+		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS created_by TEXT`,
+		`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS plan_generated_by TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := pool.Exec(ctx, s); err != nil {
+			return err
+		}
 	}
-	model := os.Getenv("ANTHROPIC_MODEL")
-	if model == "" {
-		model = "claude-sonnet-5-5"
-	}
-	body, err := json.Marshal(map[string]any{
-		"model":      model,
-		"max_tokens": 1500,
-		"system":     system,
-		"messages":   []map[string]string{{"role": "user", "content": user}},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(time.Duration(attempt) * 2 * time.Second):
-			}
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			"https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-		if err != nil {
-			return "", err
-		}
-		req.Header.Set("x-api-key", key)
-		req.Header.Set("anthropic-version", "2023-06-01")
-		req.Header.Set("content-type", "application/json")
-
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		data, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("claude api status %d", resp.StatusCode)
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("claude api status %d", resp.StatusCode)
-		}
-		var out struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		}
-		if err := json.Unmarshal(data, &out); err != nil {
-			return "", err
-		}
-		var sb strings.Builder
-		for _, b := range out.Content {
-			if b.Type == "text" {
-				sb.WriteString(b.Text)
-			}
-		}
-		return strings.TrimSpace(sb.String()), nil
-	}
-	return "", fmt.Errorf("claude api unavailable after retries: %w", lastErr)
+	return nil
 }
 
-// campaignFacts loads a campaign with its product and renders the facts the AI may use.
-func campaignFacts(ctx context.Context, pool *pgxpool.Pool, id int) (name, facts string, err error) {
+// loadCampaign loads a campaign together with its product (if any).
+func loadCampaign(ctx context.Context, pool *pgxpool.Pool, id int) (campaignInfo, error) {
 	var (
-		goal, audience, status string
-		budget                 float64
-		pname, pdesc, pbrand   *string
-		pprice                 *float64
+		ci                   campaignInfo
+		pname, pdesc, pbrand *string
 	)
-	err = pool.QueryRow(ctx,
-		`SELECT c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
+	err := pool.QueryRow(ctx,
+		`SELECT c.name, c.goal, c.target_audience, c.budget::float8,
 		        p.name, p.description, p.price::float8, p.brand_info
 		 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id
 		 WHERE c.id = $1`, id,
-	).Scan(&name, &goal, &audience, &budget, &status, &pname, &pdesc, &pprice, &pbrand)
+	).Scan(&ci.Name, &ci.Goal, &ci.Audience, &ci.Budget, &pname, &pdesc, &ci.Price, &pbrand)
 	if err != nil {
-		return "", "", err
+		return ci, err
 	}
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "แคมเปญ: %s\nเป้าหมาย: %s\nกลุ่มเป้าหมาย: %s\nงบประมาณ: %.0f บาท\n", name, goal, audience, budget)
 	if pname != nil {
-		fmt.Fprintf(&sb, "สินค้า: %s\n", *pname)
-		if pdesc != nil && *pdesc != "" {
-			fmt.Fprintf(&sb, "รายละเอียดสินค้า: %s\n", *pdesc)
-		}
-		if pprice != nil {
-			fmt.Fprintf(&sb, "ราคา: %.0f บาท\n", *pprice)
-		}
-		if pbrand != nil && *pbrand != "" {
-			fmt.Fprintf(&sb, "ข้อมูลแบรนด์: %s\n", *pbrand)
-		}
-	} else {
-		sb.WriteString("สินค้า: (ยังไม่ได้ระบุสินค้า)\n")
+		ci.Product = *pname
 	}
-	return name, sb.String(), nil
+	if pdesc != nil {
+		ci.ProductDesc = *pdesc
+	}
+	if pbrand != nil {
+		ci.Brand = *pbrand
+	}
+	return ci, nil
 }
 
 func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 	writers := requireRole("marketing", "admin")
-	mockMode := func() bool { return os.Getenv("ANTHROPIC_API_KEY") == "" }
 
-	// Step 2: AI plans the campaign (saved to campaigns.plan, status draft -> planned)
+	// Step 2: plan the campaign (Claude -> Gemini -> template). Saved to campaigns.plan,
+	// status draft -> planned. generated_by says what produced it.
 	app.Post("/campaigns/:id/plan", writers, func(c *fiber.Ctx) error {
 		id, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
 		}
-		name, facts, err := campaignFacts(c.UserContext(), pool, id)
+		ci, err := loadCampaign(c.UserContext(), pool, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
 		if err != nil {
 			return serverError(c, err)
 		}
-		plan, err := callClaude(c.UserContext(), systemPrompt,
-			"วางแผนแคมเปญสั้นๆ ประกอบด้วย กลุ่มลูกค้าย่อย ช่องทาง ข้อความหลัก และตัวชี้วัดที่ใช้วัดผล\n\n"+facts,
-			"[MOCK] แผนตัวอย่างสำหรับแคมเปญ "+name+"\n1. กลุ่มลูกค้า: ตามที่กำหนด\n2. ช่องทาง: LINE\n3. ข้อความหลัก: (จำลอง)\n4. ตัวชี้วัด: reach, CTR, ต้นทุนต่อลีด")
-		if err != nil {
-			return c.Status(502).JSON(fiber.Map{"error": "ai unavailable, try again later"})
-		}
+		plan, by := generate(c.UserContext(), systemPrompt,
+			"วางแผนแคมเปญสั้นๆ ประกอบด้วย กลุ่มลูกค้าย่อย ช่องทาง ข้อความหลัก และตัวชี้วัดที่ใช้วัดผล\n\n"+ci.facts(),
+			func() string { return templatePlan(ci) })
 		if _, err := pool.Exec(c.UserContext(),
-			`UPDATE campaigns SET plan=$1,
+			`UPDATE campaigns SET plan=$1, plan_generated_by=$2,
 			   status = CASE WHEN status='draft' THEN 'planned'::campaign_status ELSE status END
-			 WHERE id=$2`, plan, id); err != nil {
+			 WHERE id=$3`, plan, by, id); err != nil {
 			return serverError(c, err)
 		}
-		return c.JSON(fiber.Map{"campaign_id": id, "plan": plan, "mock": mockMode()})
+		auditUser(c, pool, "campaign_planned", fmt.Sprintf("campaign:%d", id), "generated_by="+by)
+		return c.JSON(fiber.Map{"campaign_id": id, "plan": plan, "generated_by": by})
 	})
 
-	// Step 3: AI drafts content variants; saved as 'draft' (a human must still submit + approve)
+	// Step 3: draft content variants; saved as 'draft' (a human must still submit + approve)
 	app.Post("/campaigns/:id/generate-contents", writers, func(c *fiber.Ctx) error {
 		id, err := c.ParamsInt("id")
 		if err != nil {
@@ -189,7 +109,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return c.Status(400).JSON(fiber.Map{"error": "count must be between 1 and 5"})
 		}
 
-		name, facts, err := campaignFacts(c.UserContext(), pool, id)
+		ci, err := loadCampaign(c.UserContext(), pool, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
@@ -197,17 +117,10 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return serverError(c, err)
 		}
 
-		mock := make([]string, in.Count)
-		for i := range mock {
-			mock[i] = fmt.Sprintf("[MOCK] ข้อความโฆษณาแบบที่ %d สำหรับแคมเปญ %s ช่องทาง %s", i+1, name, in.Channel)
-		}
-		text, err := callClaude(c.UserContext(), systemPrompt,
+		text, by := generate(c.UserContext(), systemPrompt,
 			fmt.Sprintf("เขียนข้อความโฆษณา %d แบบ สำหรับช่องทาง %s แต่ละแบบคั่นด้วยบรรทัดที่มีเฉพาะ --- ไม่ต้องมีหัวข้อหรือเลขข้อ\n\n%s",
-				in.Count, in.Channel, facts),
-			strings.Join(mock, "\n---\n"))
-		if err != nil {
-			return c.Status(502).JSON(fiber.Map{"error": "ai unavailable, try again later"})
-		}
+				in.Count, in.Channel, ci.facts()),
+			func() string { return strings.Join(templateContents(ci, in.Channel, in.Count), "\n---\n") })
 
 		out := []Content{}
 		for _, part := range strings.Split(text, "\n---\n") {
@@ -217,13 +130,15 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool) {
 				continue
 			}
 			x, err := scanContent(pool.QueryRow(c.UserContext(),
-				`INSERT INTO contents (campaign_id, channel, body) VALUES ($1,$2,$3)
-				 RETURNING `+contentCols, id, in.Channel, part))
+				`INSERT INTO contents (campaign_id, channel, body, generated_by, created_by) VALUES ($1,$2,$3,$4,$5)
+				 RETURNING `+contentCols, id, in.Channel, part, by, currentUser(c).Email))
 			if err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, x)
 		}
-		return c.Status(201).JSON(fiber.Map{"mock": mockMode(), "contents": out})
+		auditUser(c, pool, "contents_generated", fmt.Sprintf("campaign:%d", id),
+			fmt.Sprintf("generated_by=%s count=%d", by, len(out)))
+		return c.Status(201).JSON(fiber.Map{"generated_by": by, "contents": out})
 	})
 }
