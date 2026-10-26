@@ -297,7 +297,11 @@ func main() {
 			"content not found or not pending approval", "rejected", "content_rejected")
 	})
 
-	registerAIRoutes(app, pool)
+	// AI retry queue: when every provider failed and a template draft was saved, a worker tries the AI
+	// again later (1 min, 5 min, 15 min, 1 h, 3 h) and upgrades the draft if nobody has touched it yet.
+	queue := initQueue(ctx)
+	registerAIRoutes(app, pool, queue)
+	go runWorker(ctx, queue, upgradeHandler(pool), 15*time.Second, envInt("AI_RETRY_MAX", 5))
 
 	log.Fatal(app.Listen(":8080"))
 }

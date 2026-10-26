@@ -33,10 +33,15 @@ services:
       AI_PROVIDERS: ${AI_PROVIDERS:-claude,gemini}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PROXY_HEADER: ${PROXY_HEADER:-}
+      AI_DAILY_QUOTA_PER_USER: ${AI_DAILY_QUOTA_PER_USER:-30}
+      AI_DAILY_TOKEN_CAP: ${AI_DAILY_TOKEN_CAP:-0}
+      AI_RETRY_MAX: ${AI_RETRY_MAX:-5}
     ports: ["8080:8080"]
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   dbdata:

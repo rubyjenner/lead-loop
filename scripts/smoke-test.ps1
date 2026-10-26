@@ -139,6 +139,11 @@ Check 'generate-contents returns 2 drafts' ($gen.Status -eq 201 -and @($gen.Json
 Check 'generated drafts are marked with their source' (@('claude', 'gemini', 'template') -contains $gen.Json.generated_by)
 Check 'sales cannot call AI (403)' ((Call 'POST' "/campaigns/$cid/plan" $sales.Token $null).Status -eq 403)
 Write-Host "      AI source used: $($gen.Json.generated_by)"
+$use = Call 'GET' '/ai-usage/me' $mk.Token $null
+Check 'ai-usage/me shows today usage and the daily limit' ($use.Status -eq 200 -and $null -ne $use.Json.per_user_daily_limit)
+Check 'sales cannot read the admin usage summary (403)' ((Call 'GET' '/ai-usage' $sales.Token $null).Status -eq 403)
+$sum = Call 'GET' '/ai-usage?days=1' $admin $null
+Check 'admin reads the usage summary (every AI request is recorded)' ($sum.Status -eq 200 -and @($sum.Json.usage).Count -ge 1)
 
 Write-Host "`n== Disable, re-enable, reset password =="
 Check 'admin disables marketing user' ((Call 'PATCH' "/users/$($mk.Id)" $admin @{ active = $false }).Status -eq 200)
