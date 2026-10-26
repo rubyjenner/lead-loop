@@ -169,11 +169,11 @@ func TestUsageTokensAreReported(t *testing.T) {
 		t.Errorf("claude usage: %+v", r)
 	}
 	t.Setenv("AI_PROVIDERS", "gemini")
-	g := fakeAI(t, 200, `{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":6}}`)
+	g := fakeAI(t, 200, `{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":6,"thoughtsTokenCount":4}}`)
 	oldG := geminiBase
 	geminiBase = g.URL + "/"
 	defer func() { geminiBase = oldG; g.Close() }()
-	if r := runR(true); r.In != 5 || r.Out != 6 || r.By != "gemini" {
+	if r := runR(true); r.In != 5 || r.Out != 10 || r.By != "gemini" {
 		t.Errorf("gemini usage: %+v", r)
 	}
 }

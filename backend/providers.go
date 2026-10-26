@@ -116,7 +116,7 @@ func callClaude(ctx context.Context, key, system, user string) (string, Usage, e
 func callGemini(ctx context.Context, key, system, user string) (string, Usage, error) {
 	model := os.Getenv("GEMINI_MODEL")
 	if model == "" {
-		model = "gemini-2.5-flash"
+		model = "gemini-3.5-flash-lite"
 	}
 	body, err := json.Marshal(map[string]any{
 		"systemInstruction": map[string]any{"parts": []map[string]string{{"text": system}}},
@@ -142,6 +142,7 @@ func callGemini(ctx context.Context, key, system, user string) (string, Usage, e
 		UsageMetadata struct {
 			PromptTokenCount     int `json:"promptTokenCount"`
 			CandidatesTokenCount int `json:"candidatesTokenCount"`
+			ThoughtsTokenCount   int `json:"thoughtsTokenCount"`
 		} `json:"usageMetadata"`
 	}
 	if err := json.Unmarshal(data, &out); err != nil {
@@ -154,7 +155,7 @@ func callGemini(ctx context.Context, key, system, user string) (string, Usage, e
 		}
 		break // first candidate only
 	}
-	return strings.TrimSpace(sb.String()), Usage{In: out.UsageMetadata.PromptTokenCount, Out: out.UsageMetadata.CandidatesTokenCount}, nil
+	return strings.TrimSpace(sb.String()), Usage{In: out.UsageMetadata.PromptTokenCount, Out: out.UsageMetadata.CandidatesTokenCount + out.UsageMetadata.ThoughtsTokenCount}, nil // thinking tokens are billed as output
 }
 
 // providerOrder reads AI_PROVIDERS (default "claude,gemini"). "template" is not listed: the rule/template
