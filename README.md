@@ -28,6 +28,9 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 
 - สคริปต์ทดสอบเดิม `scripts/smoke-test.ps1` (66 รายการ ผ่านทั้งหมดเมื่อ 26 ต.ค.) ครอบคลุมล็อกอิน สิทธิ์ flow คอนเทนต์ กฎผู้อนุมัติ ปิด/เปิดผู้ใช้ audit log และ AI
 - Lead API ทดสอบบน Docker จริงแล้ว (28 ต.ค.): `scripts/leads-smoke-test.ps1` ผ่าน 13 รายการ (สร้างลีดต้องมี consent, event/คะแนน, เหตุผลของคะแนน, เพิ่ม/แก้/ลบกฎ, ลองกฎ, ถอน consent, anonymize)
+- `scripts/smoke-test.ps1` ผ่าน 66/66 หลังรวมโค้ดลีด (28 ต.ค.) รวมกับ `leads-smoke-test.ps1` 13 รายการ = 79 รายการ
+- แก้ AI ถามกลับแทนการเขียนโฆษณาเมื่อแคมเปญไม่มีสินค้า (Gemini เคยตอบเป็นคำขอข้อมูลแล้วถูกเก็บเป็นร่าง): ปรับ system prompt และ prompt สร้างข้อความให้เขียนจากข้อมูลที่มีเสมอ ตรวจกับ Gemini จริงแล้วได้ 2 ร่างครบ
+- ข้อมูลเดโม: `scripts/demo-seed.ps1` สร้างสินค้า แคมเปญ และลีดจำลอง Cold/Warm/Hot (คะแนน 10 / 30 / 80, Hot เป็น `qualified`); ขั้นตอนเดโมและคำถามที่คาดไว้อยู่ใน `docs/DEMO_GUIDE.md`
 - แก้ปัญหาภาษาไทยเป็น `?` ในฐานข้อมูล: ซ่อมชื่อ/คำอธิบายกฎ 16 ข้อและคำสำคัญ (`event_keywords`) แล้ว ตรวจด้วยค่า UTF-8 hex; สาเหตุคือส่งไฟล์ SQL ผ่าน pipe ของ PowerShell จึงให้ใช้ `docker compose cp` + `psql -f` แทน
 - ทดสอบเรียก AI จริงแล้ว: Gemini ฟรี (ข้อมูลจำลองเท่านั้น) ด้วย `GEMINI_MODEL=gemini-3.5-flash-lite` ได้ `generated_by: gemini` และคิว Redis อัปเกรดร่างเทมเพลตเป็นฉบับ AI ได้เมื่อ Gemini กลับมา; ตัวเลข token ของ Gemini นับรวม token ที่ใช้คิด (thinking) เป็น output
 - โค้ดอยู่บน GitHub แบบ private (`rubyjenner/lead-loop`, branch `main`); `.env` ไม่ถูกติดตาม
@@ -45,10 +48,20 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - เพิ่ม `postman/LeadLoop-Leads.postman_collection.json` และ `docs/LEADS_API.md` พร้อม Mermaid
 - ตรวจ `gofmt`, JSON ของ Postman และ unit test ของ engine แล้ว; ยังไม่ได้ import Postman collection ทดลองครบทุก endpoint
 
+**Logic ที่ยังไม่ได้ทำ** (ประมาณ 28 ต.ค.: backend ~60–65%, ทั้งโปรเจกต์ ~40%)
+- ช่องทางแชต: รับข้อความลูกค้าเข้าระบบ (mock ก่อน แล้ว LINE webhook)
+- AI ตอบลูกค้าตามข้อมูลสินค้า
+- เผยแพร่คอนเทนต์ที่อนุมัติแล้วออกช่องทางจริง
+- job รายวันบน Redis (`no_reply_3d`, `inactive_7d`) และ nurturing ตามระดับลีดเฉพาะผู้ที่ให้ consent การตลาด
+- แจ้งทีมขายเมื่อลีด qualified และมอบหมายลีดให้ sales
+- รายงานสรุปลีดตามช่องทางและป้อนผลกลับเข้าแผนรอบถัดไป
+- ปกปิดข้อมูลส่วนตัวก่อนส่งให้ AI ภายนอก และกำหนดระยะเก็บข้อมูล
+- ย้ายลิมิตล็อกอินไป Redis
+
 **ขั้นต่อไป** (ตามเอกสารดีไซน์ฉบับปรับปรุง)
-1. รัน `scripts/smoke-test.ps1` ชุดเดิมซ้ำหลังรวมโค้ดลีด; import Postman collection ทดลองทุก endpoint; เตรียมข้อมูลจำลองสำหรับเดโม 29 ต.ค. (ลบ/anonymize ลีดทดสอบเก่า)
+1. 30 ต.ค.: เดโมและอัปเดตความคืบหน้า (ใช้ `docs/DEMO_GUIDE.md`); import Postman collection ทดลองทุก endpoint
 2. ส่งเกณฑ์คะแนนฉบับร่างให้พี่เลี้ยงตรวจ (เกณฑ์ส่งต่อ 50, ความถี่ติดตาม) และตอบคำถามพี่แล้วว่า "ลีด" คือการจัดอันดับลูกค้าแต่ละคน ส่วนการเทียบช่องทางไปอยู่ในส่วนวัดผล (ขั้นที่ 8) ซึ่งต้องเพิ่มรายงานสรุปลีดตามช่องทาง
-3. 29 ต.ค.: เดโมภายใน
+3. เดโมภายในและอัปเดตความคืบหน้า (ศุกร์ 30 ต.ค.)
 4. ส่งตารางประมาณการค่าใช้จ่ายให้พี่เลี้ยง (ส่งแล้ว) และสรุป PDPA 1 หน้าสำหรับ Deputy Manager ก่อนใช้ข้อมูลจริง
 5. LINE: บริษัทไม่มี LINE OA ให้ ต้องสร้างเองสำหรับทดสอบ (ข้อมูลจำลอง ทดสอบกับคนที่ยินยอม) ทำช่องทางจำลอง (mock) ก่อนแล้วค่อยต่อ LINE จริง; webhook ต้องเป็น HTTPS สาธารณะ
 6. job รายวันบน Redis สร้าง event `no_reply_3d` / `inactive_7d` และ nurturing ตามความถี่ของระดับลีด
@@ -271,6 +284,8 @@ Endpoints:
 - backend/: Go (Fiber) API (`main.go` routes, `auth.go` login/roles, `ai.go` AI routes, `ai_jobs.go` ai_usage/โควตา/ตัวอัปเกรดงานคิว, `providers.go` Claude/Gemini, `fallback.go` เทมเพลตและ prompt, `jobs.go` + `redisq.go` คิวลองใหม่, `scoring.go` engine ให้คะแนนลีด (ไม่ต่อ DB), `scoring_test.go` unit test ของ engine, `leads.go` endpoint ลีดและกฎคะแนน)
 - scripts/smoke-test.ps1: ทดสอบระบบเดิมผ่าน API (PowerShell)
 - scripts/leads-smoke-test.ps1: ทดสอบ Lead API ด้วยข้อมูลจำลอง (PowerShell)
+- scripts/demo-seed.ps1: สร้างข้อมูลจำลอง (สินค้า แคมเปญ ลีด Cold/Warm/Hot) สำหรับเดโม
+- docs/DEMO_GUIDE.md: คู่มือเดโมและอัปเดตความคืบหน้า
 - docs/LEADS_API.md + postman/: เอกสารและชุดทดสอบ API ลีด
 - docker-compose.yml: PostgreSQL, Redis, API
 
@@ -283,7 +298,7 @@ Endpoints:
 
 ## Next
 
-1. รวมชุดทดสอบลีดเข้ากับ smoke test หลัก; ทดสอบสิทธิ์ของแต่ละ role กับ endpoint ลีด
+1. ช่องทางแชตจำลอง (mock) รับข้อความเข้าระบบ แล้วหน้าเว็บขั้นต่ำ (ล็อกอิน แคมเปญ อนุมัติ ลีด แก้กฎ)
 2. ปรับเกณฑ์คะแนนตามความเห็นพี่เลี้ยง; รายงานสรุปลีดตามช่องทาง
 3. Daily Redis job for time-based events (`no_reply_3d`, `inactive_7d`) and nurturing
 4. Chat channel interface with a mock channel, then LINE (own test OA) with PDPA consent
