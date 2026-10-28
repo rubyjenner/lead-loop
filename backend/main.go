@@ -87,7 +87,7 @@ func main() {
 	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
 		app.Use(cors.New(cors.Config{
 			AllowOrigins: origins,
-			AllowMethods: "GET,POST,PATCH,OPTIONS",
+			AllowMethods: "GET,POST,PATCH,PUT,DELETE,OPTIONS",
 			AllowHeaders: "Authorization,Content-Type",
 			MaxAge:       600,
 		}))
@@ -111,6 +111,7 @@ func main() {
 
 	// Login is public; everything registered after this requires a valid token.
 	registerAuthRoutes(app, pool)
+	registerLeadRoutes(app, pool)
 	writers := requireRole("marketing", "admin") // sales and others are read-only
 
 	// Step 1: team creates a campaign from product info + goal + budget
