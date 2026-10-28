@@ -16,7 +16,7 @@ import (
 // Guardrail: the AI may only use product/brand facts we give it.
 const systemPrompt = `คุณเป็นผู้ช่วยการตลาดและการขาย ตอบเป็นภาษาไทย
 กฎ: ใช้เฉพาะข้อมูลสินค้าและแบรนด์ที่ให้มาเท่านั้น ห้ามแต่งราคา โปรโมชัน หรือคุณสมบัติที่ไม่มีในข้อมูล
-ห้ามโฆษณาเกินจริง ถ้าข้อมูลไม่พอให้บอกว่าต้องการข้อมูลเพิ่มอะไร`
+ห้ามโฆษณาเกินจริง ถ้าข้อมูลไม่พอ ให้เขียนจากข้อมูลที่มีแบบทั่วไปโดยไม่แต่งข้อเท็จจริงเพิ่ม และห้ามถามกลับหรือขอข้อมูลเพิ่มแทนการเขียนงาน`
 
 // initAI adds the columns that record what produced each AI result (generated_by) and the ai_usage table.
 func initAI(ctx context.Context, pool *pgxpool.Pool) error {

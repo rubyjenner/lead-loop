@@ -121,7 +121,7 @@ func planPrompt(ci campaignInfo) string {
 }
 
 func contentsPrompt(ci campaignInfo, channel string, count int) string {
-	return fmt.Sprintf("เขียนข้อความโฆษณา %d แบบ สำหรับช่องทาง %s แต่ละแบบคั่นด้วยบรรทัดที่มีเฉพาะ --- ไม่ต้องมีหัวข้อหรือเลขข้อ\n\n%s",
+	return fmt.Sprintf("เขียนข้อความโฆษณา %d แบบ สำหรับช่องทาง %s แต่ละแบบคั่นด้วยบรรทัดที่มีเฉพาะ --- ไม่ต้องมีหัวข้อหรือเลขข้อ ต้องเขียนข้อความโฆษณาให้ครบตามจำนวนเสมอ แม้ข้อมูลน้อยก็ให้เขียนแบบทั่วไปจากข้อมูลที่มี ห้ามถามกลับหรือขอข้อมูลเพิ่ม\n\n%s",
 		count, channel, ci.facts())
 }
 
