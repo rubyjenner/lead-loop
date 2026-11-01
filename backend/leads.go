@@ -410,6 +410,35 @@ func (a *leadAPI) addLeadMessage(c *fiber.Ctx) error {
 	return a.recordEvents(c, id, evs)
 }
 
+// applyEvents stores events and rescores the lead. It has no HTTP in it, so the chat channels can use it too.
+// The caller must already have checked consent (leadAllowsProcessing).
+func (a *leadAPI) applyEvents(ctx context.Context, id int64, evs []leadEventReq) ([]string, ScoreResult, error) {
+	detected := []string{}
+	for _, e := range evs {
+		data, err := json.Marshal(e.Data)
+		if err != nil || string(data) == "null" {
+			data = []byte("{}")
+		}
+		if _, err := a.pool.Exec(ctx, `INSERT INTO lead_events(lead_id, type, data) VALUES($1,$2,$3)`, id, e.Type, string(data)); err != nil {
+			return nil, ScoreResult{}, err
+		}
+		detected = append(detected, e.Type)
+		if e.Type == "unsubscribed" { // stop marketing at once, keep the evidence
+			if _, err := a.pool.Exec(ctx, `UPDATE leads SET consent_marketing=FALSE, updated_at=now() WHERE id=$1`, id); err != nil {
+				return nil, ScoreResult{}, err
+			}
+			if _, err := a.pool.Exec(ctx, `INSERT INTO consent_events(lead_id, kind, action, text_version) VALUES($1,'marketing','withdrawn','keyword')`, id); err != nil {
+				return nil, ScoreResult{}, err
+			}
+		}
+	}
+	res, err := a.rescore(ctx, id)
+	if err != nil {
+		return nil, ScoreResult{}, err
+	}
+	return detected, res, nil
+}
+
 func (a *leadAPI) recordEvents(c *fiber.Ctx, id int64, evs []leadEventReq) error {
 	ctx := c.Context()
 	ok, err := a.leadAllowsProcessing(ctx, id)
@@ -422,26 +451,7 @@ func (a *leadAPI) recordEvents(c *fiber.Ctx, id int64, evs []leadEventReq) error
 	if !ok {
 		return leadErr(c, 409, "lead has no valid consent (withdrawn or anonymized)")
 	}
-	detected := []string{}
-	for _, e := range evs {
-		data, err := json.Marshal(e.Data)
-		if err != nil || string(data) == "null" {
-			data = []byte("{}")
-		}
-		if _, err := a.pool.Exec(ctx, `INSERT INTO lead_events(lead_id, type, data) VALUES($1,$2,$3)`, id, e.Type, string(data)); err != nil {
-			return serverError(c, err)
-		}
-		detected = append(detected, e.Type)
-		if e.Type == "unsubscribed" { // stop marketing at once, keep the evidence
-			if _, err := a.pool.Exec(ctx, `UPDATE leads SET consent_marketing=FALSE, updated_at=now() WHERE id=$1`, id); err != nil {
-				return serverError(c, err)
-			}
-			if _, err := a.pool.Exec(ctx, `INSERT INTO consent_events(lead_id, kind, action, text_version) VALUES($1,'marketing','withdrawn','keyword')`, id); err != nil {
-				return serverError(c, err)
-			}
-		}
-	}
-	res, err := a.rescore(ctx, id)
+	detected, res, err := a.applyEvents(ctx, id, evs)
 	if err != nil {
 		return serverError(c, err)
 	}
