@@ -98,7 +98,7 @@ ADMIN_EMAIL / ADMIN_PASSWORD ใช้สร้างแอดมินคนแ
 
 | Role | ทำอะไรได้ |
 |---|---|
-| admin | ทุกอย่าง + จัดการผู้ใช้ (`POST/GET /users`, `PATCH /users/:id`, `POST /users/:id/reset-password`) + ดู `GET /audit-log` + คำนวณคะแนนใหม่/แก้เกณฑ์ส่งต่อ/ส่งออกและลบลีด |
+| admin | ทุกอย่าง + จัดการผู้ใช้ (`POST/GET /users`, `PATCH /users/:id`, `POST /users/:id/reset-password`, `POST /users/:id/reset-link`, `GET /users/approver-check`) + ดู `GET /audit-log` + คำนวณคะแนนใหม่/แก้เกณฑ์ส่งต่อ/ส่งออกและลบลีด |
 | marketing | สร้าง/แก้แคมเปญ สินค้า คอนเทนต์ เรียก AI ส่งอนุมัติ/อนุมัติ/ปฏิเสธ + สร้างลีด บันทึก event/consent แก้กฎคะแนนและคำสำคัญ |
 | sales | ดูข้อมูล (GET) + รับลีดที่ `qualified` และเปลี่ยนสถานะลีด (`handed_off` / `closed` / `lost`) |
 
@@ -113,6 +113,15 @@ PowerShell (ใช้ `Read-Host` เพื่อไม่พิมพ์รห�
 
     Invoke-RestMethod -Method Post -Uri http://localhost:8080/users -ContentType 'application/json' `
       -Body '{"email":"sale1@example.com","password":"ตั้งรหัสผ่านที่นี่","role":"sales"}'
+
+**บัญชีสร้างโดย admin เท่านั้น** (ไม่มีสมัครเอง และไม่เชื่อมระบบของบริษัท) กำหนด role ตามหน้าที่ มี 2 วิธี:
+
+1. **ลิงก์เชิญ (แนะนำ)**: ส่ง `POST /users` โดย**ไม่ใส่** `password` → ได้ `invite_url` (ใช้ได้ครั้งเดียว อายุ 72 ชม.) admin คัดลอกไปส่งให้เจ้าของบัญชี เขาตั้งรหัสผ่านเองที่ `POST /auth/set-password` (`token`, `new_password`)
+2. **รหัสผ่านชั่วคราว**: ใส่ `password` → ผู้ใช้ต้องเปลี่ยนตอนล็อกอินครั้งแรก
+
+ลืมรหัสผ่าน: admin เรียก `POST /users/:id/reset-link` → ได้ `reset_url` (ใช้ได้ครั้งเดียว อายุ 1 ชม.) ส่งให้เจ้าของบัญชี รหัสเดิมยังใช้ได้จนกว่าจะใช้ลิงก์ และลิงก์ใหม่จะยกเลิกลิงก์เก่า เมื่อตั้งรหัสใหม่แล้ว session เดิมหมดอายุทันที ระบบเก็บเฉพาะแฮช SHA-256 ของโทเค็น ไม่เก็บโทเค็นจริง
+
+ข้อมูลผู้ใช้: `name`, `auth_provider` (ตอนนี้เป็น `local` เสมอ เผื่อ SSO ในอนาคต), `last_login_at`, `pending_link` (มีลิงก์ที่ยังไม่ถูกใช้/ไม่หมดอายุ) ตั้งค่าใน `.env`: `APP_BASE_URL` (ใช้สร้างลิงก์), `ALLOWED_EMAIL_DOMAINS` (จำกัดโดเมนอีเมล เว้นว่าง = ไม่จำกัด) `GET /users/approver-check` เตือนเมื่อมีผู้อนุมัติ (marketing/admin ที่เปิดใช้งาน) น้อยกว่า 2 คน เพราะผู้อนุมัติต้องคนละคนกับผู้สร้าง
 
 คำสั่งด้านล่างทั้งหมดต้องล็อกอินและตั้ง header ตามด้านบนก่อน (macOS/Linux ใช้ `-H "Authorization: Bearer $TOKEN"`)
 
@@ -298,7 +307,7 @@ Endpoints:
 
 ## Next
 
-1. ช่องทางแชตจำลอง (mock) รับข้อความเข้าระบบ แล้วหน้าเว็บขั้นต่ำ (ล็อกอิน แคมเปญ อนุมัติ ลีด แก้กฎ)
+1. หน้าเว็บขั้นต่ำ (ล็อกอิน, Manage Users, แคมเปญ, อนุมัติ, ลีด, แก้กฎ) — API ระบบบัญชีเสร็จแล้ว (ลิงก์เชิญ/ลืมรหัสผ่าน, ชื่อ, `auth_provider`) รอหน้าจอ
 2. ปรับเกณฑ์คะแนนตามความเห็นพี่เลี้ยง; รายงานสรุปลีดตามช่องทาง
 3. Daily Redis job for time-based events (`no_reply_3d`, `inactive_7d`) and nurturing
 4. Chat channel interface with a mock channel, then LINE (own test OA) with PDPA consent

@@ -46,10 +46,18 @@ $T_CALLBACK = '\u0e0a\u0e48\u0e27\u0e22\u0e15\u0e34\u0e14\u0e15\u0e48\u0e2d\u0e0
 $T_STOP     = '\u0e2b\u0e22\u0e38\u0e14'      # unsubscribe keyword
 
 Write-Host "`n== Login ==" -ForegroundColor Cyan
-$sec = Read-Host 'Admin password' -AsSecureString
-$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+if ($env:SMOKE_ADMIN_PASSWORD) {
+  $plain = $env:SMOKE_ADMIN_PASSWORD   # same variable as smoke-test.ps1
+} else {
+  $sec = Read-Host 'Admin password' -AsSecureString
+  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+}
 $login = Call 'POST' '/auth/login' (@{ email = $Email; password = $plain } | ConvertTo-Json) -NoAuth
 Check 'admin login' ($login.Status -eq 200 -and $login.Body.token)
+if ($login.Status -ne 200) {
+  Write-Host "Cannot continue: login returned HTTP $($login.Status) (401 = wrong password, 429 = too many failed logins -> docker compose restart api)" -ForegroundColor Red
+  exit 1
+}
 $script:Token = $login.Body.token
 $plain = $null
 

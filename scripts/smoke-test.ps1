@@ -75,15 +75,20 @@ $bad = Call 'POST' '/auth/login' $null @{ email = $AdminEmail; password = 'defin
 Check 'wrong password -> 401' ($bad.Status -eq 401)
 $login = Call 'POST' '/auth/login' $null @{ email = $AdminEmail; password = $adminPw }
 Check 'admin login -> 200 with token' ($login.Status -eq 200 -and $login.Json.token)
-if ($login.Status -ne 200) { Write-Host 'Cannot continue without admin login.' -ForegroundColor Red; exit 1 }
+if ($login.Status -ne 200) {
+    Write-Host "Cannot continue without admin login (HTTP $($login.Status): 401 = wrong password, 429 = too many failed logins, run 'docker compose restart api')." -ForegroundColor Red
+    exit 1
+}
 $admin = $login.Json.token
 $me = Call 'GET' '/auth/me' $admin $null
 Check '/auth/me is admin' ($me.Json.role -eq 'admin')
 $adminId = $me.Json.id
 
 # creates a user, checks the first-login rule, changes the password, returns @{ Id; Email; Token }
+$script:userSeq = 0
 function NewUser($Role) {
-    $email = "smoke-$Role-$sfx@example.com"
+    $script:userSeq++
+    $email = "smoke-$Role-$sfx-$($script:userSeq)@example.com"
     $c = Call 'POST' '/users' $admin @{ email = $email; password = $tempPw; role = $Role }
     Check "admin creates $Role user" ($c.Status -eq 201 -and $c.Json.must_change_password -eq $true)
     $l = Call 'POST' '/auth/login' $null @{ email = $email; password = $tempPw }
@@ -169,17 +174,60 @@ if ($admins.Count -eq 1) {
     Write-Host '      SKIP  last-admin checks (more than one active admin exists)' -ForegroundColor Yellow
 }
 
+Write-Host "`n== Invite link, name, forgot-password link =="
+$sales2 = NewUser 'sales'   # fresh sales user: $sales was reset and demoted by earlier checks
+$invEmail = "smoke-invite-$sfx@example.com"
+$inv = Call 'POST' '/users' $admin @{ email = $invEmail; name = "Smoke Invite"; role = 'sales' }
+Check 'create without password returns an invite link (201)' ($inv.Status -eq 201 -and $inv.Json.invite_url -match 'token=')
+$invTok = ''
+if ($inv.Json.invite_url -match 'token=([A-Za-z0-9_-]+)') { $invTok = $Matches[1] }
+Check 'bad email format rejected (400)' ((Call 'POST' '/users' $admin @{ email = 'not an email'; role = 'sales' }).Status -eq 400)
+Check 'nobody can log in before the link is used (401)' ((Call 'POST' '/auth/login' $null @{ email = $invEmail; password = $tempPw }).Status -eq 401)
+Check 'set-password rejects an unknown token (400)' ((Call 'POST' '/auth/set-password' $null @{ token = 'x' * 43; new_password = $newPw }).Status -eq 400)
+Check 'set-password rejects a weak password (400)' ((Call 'POST' '/auth/set-password' $null @{ token = $invTok; new_password = 'short' }).Status -eq 400)
+Check 'invite link sets the password (200)' ((Call 'POST' '/auth/set-password' $null @{ token = $invTok; new_password = $newPw }).Status -eq 200)
+Check 'invite link works only once (400)' ((Call 'POST' '/auth/set-password' $null @{ token = $invTok; new_password = $tempPw }).Status -eq 400)
+$il = Call 'POST' '/auth/login' $null @{ email = $invEmail; password = $newPw }
+Check 'invited user logs in without a forced password change' ($il.Status -eq 200 -and $il.Json.must_change_password -eq $false)
+$me2 = Call 'GET' '/auth/me' $il.Json.token $null
+Check '/auth/me returns the name' ($me2.Json.name -eq 'Smoke Invite')
+$ul = Call 'GET' '/users' $admin $null
+$row = @($ul.Json | Where-Object { $_.email -eq $invEmail })[0]
+Check 'user list has name, auth_provider=local and last_login_at' ($row.name -eq 'Smoke Invite' -and $row.auth_provider -eq 'local' -and $row.last_login_at)
+Check 'admin renames a user' ((Call 'PATCH' "/users/$($row.id)" $admin @{ name = 'Smoke Renamed' }).Status -eq 200)
+
+$rs = Call 'POST' "/users/$($row.id)/reset-link" $admin $null
+Check 'admin creates a reset link (201)' ($rs.Status -eq 201 -and $rs.Json.reset_url -match 'token=')
+$rsTok = ''
+if ($rs.Json.reset_url -match 'token=([A-Za-z0-9_-]+)') { $rsTok = $Matches[1] }
+Check 'old password still works until the link is used' ((Call 'POST' '/auth/login' $null @{ email = $invEmail; password = $newPw }).Status -eq 200)
+Check 'sales cannot create reset links (403)' ((Call 'POST' "/users/$($row.id)/reset-link" $sales2.Token $null).Status -eq 403)
+Check 'reset-link for unknown user -> 404' ((Call 'POST' '/users/99999999/reset-link' $admin $null).Status -eq 404)
+Check 'reset link sets a new password (200)' ((Call 'POST' '/auth/set-password' $null @{ token = $rsTok; new_password = $tempPw }).Status -eq 200)
+Check 'old session stops working after reset (401)' ((Call 'GET' '/auth/me' $il.Json.token $null).Status -eq 401)
+Check 'old password no longer works (401)' ((Call 'POST' '/auth/login' $null @{ email = $invEmail; password = $newPw }).Status -eq 401)
+Check 'new password works' ((Call 'POST' '/auth/login' $null @{ email = $invEmail; password = $tempPw }).Status -eq 200)
+$rs2 = Call 'POST' "/users/$($row.id)/reset-link" $admin $null
+$rs3 = Call 'POST' "/users/$($row.id)/reset-link" $admin $null
+$t2 = ''; if ($rs2.Json.reset_url -match 'token=([A-Za-z0-9_-]+)') { $t2 = $Matches[1] }
+Check 'a newer link revokes the older one (400)' ((Call 'POST' '/auth/set-password' $null @{ token = $t2; new_password = $newPw }).Status -eq 400)
+$ap = Call 'GET' '/users/approver-check' $admin $null
+Check 'approver-check returns a count' ($ap.Status -eq 200 -and $null -ne $ap.Json.active_approvers)
+Check 'sales cannot call approver-check (403)' ((Call 'GET' '/users/approver-check' $sales2.Token $null).Status -eq 403)
+[void](Call 'PATCH' "/users/$($row.id)" $admin @{ active = $false })
+Check 'link of a disabled user is refused (409)' ((Call 'POST' "/users/$($row.id)/reset-link" $admin $null).Status -eq 409)
+
 Write-Host "`n== Audit log =="
 $audit = Call 'GET' '/audit-log?limit=200' $admin $null
 $actions = @($audit.Json | ForEach-Object { $_.action })
 Check 'audit log readable by admin' ($audit.Status -eq 200)
-foreach ($a in 'login_success', 'login_failed', 'user_created', 'user_updated', 'password_changed', 'password_reset', 'content_approved', 'content_approve_denied') {
+foreach ($a in 'login_success', 'login_failed', 'user_created', 'user_updated', 'password_changed', 'password_reset', 'user_created', 'password_set_via_link', 'reset_link_created', 'content_approved', 'content_approve_denied') {
     Check "audit log has $a" ($actions -contains $a)
 }
 Check 'audit log never stores passwords' (-not (($audit.Json | ConvertTo-Json -Depth 5) -match [regex]::Escape($newPw)))
 
 # clean up: disable the smoke users
-foreach ($u in $mk, $sales) { [void](Call 'PATCH' "/users/$($u.Id)" $admin @{ active = $false }) }
+foreach ($u in $mk, $sales, $sales2) { [void](Call 'PATCH' "/users/$($u.Id)" $admin @{ active = $false }) }
 
 if ($RateLimit) {
     Write-Host "`n== Login rate limit (blocks this IP for 15 minutes) =="

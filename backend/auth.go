@@ -66,6 +66,21 @@ func initAuth(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local'`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`,
+		// one-time invite / password-reset links. Only the SHA-256 of the token is stored.
+		`CREATE TABLE IF NOT EXISTS user_tokens (
+			id         BIGSERIAL PRIMARY KEY,
+			user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			purpose    TEXT NOT NULL CHECK (purpose IN ('invite','reset')),
+			token_hash TEXT NOT NULL UNIQUE,
+			expires_at TIMESTAMPTZ NOT NULL,
+			used_at    TIMESTAMPTZ,
+			created_by BIGINT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id)`,
 		`CREATE TABLE IF NOT EXISTS audit_log (
 			id          BIGSERIAL PRIMARY KEY,
 			at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -287,13 +302,14 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		var (
 			id         int64
 			hash, role string
+			provider   string
 			active     bool
 			mustChange bool
 			tv         int
 		)
 		err := pool.QueryRow(c.UserContext(),
-			`SELECT id, password_hash, role, active, must_change_password, token_version
-			 FROM users WHERE email=$1`, email).Scan(&id, &hash, &role, &active, &mustChange, &tv)
+			`SELECT id, password_hash, role, active, must_change_password, token_version, auth_provider
+			 FROM users WHERE email=$1`, email).Scan(&id, &hash, &role, &active, &mustChange, &tv, &provider)
 		if errors.Is(err, pgx.ErrNoRows) {
 			_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(in.Password))
 			audit(c, pool, 0, email, "login_failed", email, "unknown email")
@@ -303,13 +319,16 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return serverError(c, err)
 		}
 		// Same error and same work whether the password is wrong or the account is disabled.
-		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil || !active {
+		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil || !active || provider != "local" {
 			audit(c, pool, id, email, "login_failed", email, "")
 			return c.Status(401).JSON(fiber.Map{"error": "invalid email or password"})
 		}
 		tok, err := issueToken(id, email, role, tv)
 		if err != nil {
 			return serverError(c, err)
+		}
+		if _, err := pool.Exec(c.UserContext(), `UPDATE users SET last_login_at=now() WHERE id=$1`, id); err != nil {
+			log.Printf("last_login_at update failed: %v", err)
 		}
 		audit(c, pool, id, email, "login_success", email, "")
 		return c.JSON(fiber.Map{
@@ -320,12 +339,16 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		})
 	})
 
+	registerSetPasswordRoute(app, pool, tooMany)
+
 	// everything below requires a valid, active user
 	app.Use(requireAuth(pool))
 
 	app.Get("/auth/me", func(c *fiber.Ctx) error {
 		u := currentUser(c)
-		return c.JSON(fiber.Map{"id": u.Subject, "email": u.Email, "role": u.Role})
+		var name string
+		_ = pool.QueryRow(c.UserContext(), `SELECT name FROM users WHERE id=$1`, currentUserID(c)).Scan(&name)
+		return c.JSON(fiber.Map{"id": u.Subject, "email": u.Email, "role": u.Role, "name": name})
 	})
 
 	// Change own password. Needs the current password (rate limited per user), then returns a new
@@ -382,10 +405,13 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 
 	admin := requireRole("admin")
 
-	// Create a user. They must change the password at first login.
+	// Create a user. Two ways:
+	//  - with "password": a temporary password the admin passes on (must be changed at first login)
+	//  - without "password": an invite link (valid 72 h, single use) the admin copies and sends
 	app.Post("/users", admin, func(c *fiber.Ctx) error {
 		var in struct {
 			Email    string `json:"email"`
+			Name     string `json:"name"`
 			Password string `json:"password"`
 			Role     string `json:"role"`
 		}
@@ -393,24 +419,42 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 		}
 		in.Email = strings.ToLower(strings.TrimSpace(in.Email))
-		if in.Email == "" || !strings.Contains(in.Email, "@") {
+		in.Name = strings.TrimSpace(in.Name)
+		if !validEmail(in.Email) {
 			return c.Status(400).JSON(fiber.Map{"error": "valid email is required"})
 		}
-		if len(in.Password) < minPasswordLen || len(in.Password) > maxPasswordLen {
+		if len([]rune(in.Name)) > maxNameLen {
+			return c.Status(400).JSON(fiber.Map{"error": "name is too long"})
+		}
+		if !emailDomainAllowed(in.Email) {
+			return c.Status(400).JSON(fiber.Map{"error": "email domain is not allowed"})
+		}
+		invite := in.Password == ""
+		if !invite && (len(in.Password) < minPasswordLen || len(in.Password) > maxPasswordLen) {
 			return c.Status(400).JSON(fiber.Map{"error": "password must be 8-72 characters"})
 		}
 		if !validRoles[in.Role] {
 			return c.Status(400).JSON(fiber.Map{"error": "role must be admin, marketing or sales"})
 		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+		pw := in.Password
+		if invite {
+			pw = randomString(32) // nobody knows it; the user sets their own through the invite link
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 		if err != nil {
 			return serverError(c, err)
 		}
+		ctx := c.UserContext()
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return serverError(c, err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
 		var id int64
-		err = pool.QueryRow(c.UserContext(),
-			`INSERT INTO users (email, password_hash, role, must_change_password)
-			 VALUES ($1,$2,$3,true) RETURNING id`,
-			in.Email, string(hash), in.Role).Scan(&id)
+		err = tx.QueryRow(ctx,
+			`INSERT INTO users (email, name, password_hash, role, must_change_password)
+			 VALUES ($1,$2,$3,$4,true) RETURNING id`,
+			in.Email, in.Name, string(hash), in.Role).Scan(&id)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return c.Status(409).JSON(fiber.Map{"error": "email already exists"})
@@ -418,35 +462,62 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		auditUser(c, pool, "user_created", "user:"+strconv.FormatInt(id, 10), in.Email+" role="+in.Role)
-		return c.Status(201).JSON(fiber.Map{"id": id, "email": in.Email, "role": in.Role, "must_change_password": true})
+		out := fiber.Map{"id": id, "email": in.Email, "name": in.Name, "role": in.Role, "must_change_password": true}
+		if invite {
+			tok, exp, err := createUserToken(ctx, tx, id, "invite", inviteTTL, currentUserID(c))
+			if err != nil {
+				return serverError(c, err)
+			}
+			out["invite_url"] = linkFor(tok)
+			out["invite_expires_at"] = exp
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return serverError(c, err)
+		}
+		detail := in.Email + " role=" + in.Role
+		if invite {
+			detail += " (invite link)"
+		}
+		auditUser(c, pool, "user_created", "user:"+strconv.FormatInt(id, 10), detail)
+		return c.Status(201).JSON(out)
 	})
 
 	app.Get("/users", admin, func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.UserContext(),
-			`SELECT id, email, role, active, must_change_password, created_at FROM users ORDER BY id`)
+			`SELECT u.id, u.email, u.name, u.role, u.active, u.must_change_password, u.auth_provider,
+			        u.last_login_at, u.created_at,
+			        EXISTS (SELECT 1 FROM user_tokens t
+			                WHERE t.user_id=u.id AND t.used_at IS NULL AND t.expires_at > now())
+			 FROM users u ORDER BY u.id`)
 		if err != nil {
 			return serverError(c, err)
 		}
 		defer rows.Close()
 		type user struct {
-			ID                 int64     `json:"id"`
-			Email              string    `json:"email"`
-			Role               string    `json:"role"`
-			Active             bool      `json:"active"`
-			MustChangePassword bool      `json:"must_change_password"`
-			CreatedAt          time.Time `json:"created_at"`
+			ID                 int64      `json:"id"`
+			Email              string     `json:"email"`
+			Name               string     `json:"name"`
+			Role               string     `json:"role"`
+			Active             bool       `json:"active"`
+			MustChangePassword bool       `json:"must_change_password"`
+			AuthProvider       string     `json:"auth_provider"`
+			LastLoginAt        *time.Time `json:"last_login_at"`
+			CreatedAt          time.Time  `json:"created_at"`
+			PendingLink        bool       `json:"pending_link"` // has an unused, unexpired invite/reset link
 		}
 		out := []user{}
 		for rows.Next() {
 			var u user
-			if err := rows.Scan(&u.ID, &u.Email, &u.Role, &u.Active, &u.MustChangePassword, &u.CreatedAt); err != nil {
+			if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Active, &u.MustChangePassword,
+				&u.AuthProvider, &u.LastLoginAt, &u.CreatedAt, &u.PendingLink); err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, u)
 		}
 		return c.JSON(out)
 	})
+
+	registerUserAdminRoutes(app, pool, admin)
 
 	// Change role and/or enable/disable a user. A disabled user is rejected on their very next request.
 	// The last active admin can never be demoted or disabled.
@@ -458,9 +529,17 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		var in struct {
 			Role   *string `json:"role"`
 			Active *bool   `json:"active"`
+			Name   *string `json:"name"`
 		}
-		if err := c.BodyParser(&in); err != nil || (in.Role == nil && in.Active == nil) {
-			return c.Status(400).JSON(fiber.Map{"error": "provide role and/or active"})
+		if err := c.BodyParser(&in); err != nil || (in.Role == nil && in.Active == nil && in.Name == nil) {
+			return c.Status(400).JSON(fiber.Map{"error": "provide role, active and/or name"})
+		}
+		if in.Name != nil {
+			n := strings.TrimSpace(*in.Name)
+			if len([]rune(n)) > maxNameLen {
+				return c.Status(400).JSON(fiber.Map{"error": "name is too long"})
+			}
+			in.Name = &n
 		}
 		if in.Role != nil && !validRoles[*in.Role] {
 			return c.Status(400).JSON(fiber.Map{"error": "role must be admin, marketing or sales"})
@@ -504,9 +583,9 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			}
 		}
 		if _, err = tx.Exec(ctx,
-			`UPDATE users SET role=$1, active=$2,
+			`UPDATE users SET role=$1, active=$2, name=COALESCE($5, name),
 			   token_version = token_version + CASE WHEN $4 THEN 1 ELSE 0 END
-			 WHERE id=$3`, newRole, newActive, id, curActive && !newActive); err != nil {
+			 WHERE id=$3`, newRole, newActive, id, curActive && !newActive, in.Name); err != nil {
 			return serverError(c, err)
 		}
 		if err = tx.Commit(ctx); err != nil {

@@ -237,3 +237,8 @@ INSERT INTO event_keywords (event_type, keyword) VALUES
   ('requested_visit','นัดดู'),('requested_visit','ขอดูเครื่อง'),('requested_visit','ไปดูที่ร้าน'),
   ('unsubscribed','หยุด'),('unsubscribed','เลิกรับ'),('unsubscribed','unsubscribe')
 ON CONFLICT DO NOTHING;
+
+-- chat channels: one active lead per (channel, channel_user_id) (kept in sync with db/channels.sql)
+CREATE UNIQUE INDEX IF NOT EXISTS leads_channel_identity_uq
+  ON leads(channel, channel_user_id)
+  WHERE channel_user_id IS NOT NULL AND anonymized_at IS NULL;

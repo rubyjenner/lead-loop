@@ -112,6 +112,7 @@ func main() {
 	// Login is public; everything registered after this requires a valid token.
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
+	registerChannelRoutes(app, pool)
 	writers := requireRole("marketing", "admin") // sales and others are read-only
 
 	// Step 1: team creates a campaign from product info + goal + budget
