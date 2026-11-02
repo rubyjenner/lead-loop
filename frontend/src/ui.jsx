@@ -61,7 +61,13 @@ export function Modal({ title, onClose, children, wide }) {
   )
 }
 
-export function CopyField({ value }) {
+// The API returns a path (/set-password?token=...) when APP_BASE_URL is not set: make it a full link.
+export function absoluteUrl(v) {
+  return v && v.startsWith('/') ? `${window.location.origin}${v}` : v
+}
+
+export function CopyField({ value: raw }) {
+  const value = absoluteUrl(raw)
   const [done, setDone] = useState(false)
   async function copy() {
     try { await navigator.clipboard.writeText(value) } catch {

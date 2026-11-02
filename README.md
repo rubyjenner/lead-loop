@@ -36,6 +36,12 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - โค้ดอยู่บน GitHub แบบ private (`rubyjenner/lead-loop`, branch `main`); `.env` ไม่ถูกติดตาม
 - ตารางประมาณการค่าใช้จ่ายต่อผู้ใช้ต่อเดือน (Excel มีสูตร ปรับจำนวนผู้ใช้ ครั้งต่อวัน และ token ได้) ใช้ราคาจากหน้าทางการ ตรวจ 26 ต.ค. 2569
 
+**ระบบบัญชี ช่องทางแชตจำลอง และหน้าเว็บ** (1–2 พ.ย. 2569)
+- ระบบบัญชี: admin เท่านั้นที่สร้างบัญชี; เชิญด้วยลิงก์ (ใช้ครั้งเดียว 72 ชม.) หรือรหัสผ่านชั่วคราว; ลืมรหัสผ่านใช้ลิงก์ (1 ชม.); เพิ่ม `name`, `auth_provider`, `last_login_at`; จำกัดโดเมนอีเมลแบบเลือกได้ (`ALLOWED_EMAIL_DOMAINS`); `GET /users/approver-check` เตือนเมื่อผู้อนุมัติน้อยกว่า 2 คน (รายละเอียดในหัวข้อ Login และสิทธิ์) · `smoke-test.ps1` ผ่าน 98/98
+- ช่องทางแชตจำลอง (mock): `POST /channels/mock/messages` และ `/channels/mock/consent` ยังไม่ยินยอมไม่เก็บอะไร ตอบจากข้อมูลสินค้าเท่านั้น (ผ่อน/จัดส่ง/ต่อรองส่งให้ทีมงาน) · `scripts/channels-smoke-test.ps1` ผ่าน 25/25 · เอกสาร `docs/CHANNELS_API.md`
+- `GET /contents?status=` ดึงคอนเทนต์ทุกแคมเปญพร้อมชื่อแคมเปญ (ใช้กับหน้าอนุมัติ)
+- หน้าเว็บ (`frontend/`, React + Vite, ภาษาไทย): เข้าสู่ระบบ, ตั้งรหัสผ่านจากลิงก์, เปลี่ยนรหัสผ่านครั้งแรก, จัดการผู้ใช้ (เชิญ/แก้ไข/ปิดใช้งาน/ลิงก์ตั้งรหัสผ่าน/คำเตือนผู้อนุมัติ), บันทึกการใช้งาน, อนุมัติคอนเทนต์ (ผู้สร้างอนุมัติเองไม่ได้) · หน้าอื่นเป็น "เร็วๆ นี้" · ทดสอบกับ API จริงแล้ว (เชิญผู้ใช้ ตั้งรหัสผ่านจากลิงก์ ล็อกอิน)
+
 **ลีดและกฎคะแนน** (รวมเข้าโปรเจกต์และ build/ทดสอบบน Docker แล้ว 28 ต.ค.)
 - `backend/scoring.go`: engine ให้คะแนนลีดด้วยกฎ (เงื่อนไขเป็น JSON ไม่ eval โค้ด) + ตรวจเงื่อนไขก่อนบันทึก + จับ event จากข้อความภาษาไทยด้วยคำสำคัญ
 - `backend/scoring_test.go`: unit tests ของ engine **ผ่านทั้งหมด** ด้วย `go test scoring.go scoring_test.go` (ไม่ต่อ DB): ลีดจำลอง 5 แบบตามตารางเกณฑ์, ส่งต่อทันที, ตัดสิทธิ์, เพดานคะแนน, กฎซ้อน, ตรวจเงื่อนไข, คำสำคัญภาษาไทย, งบที่ไม่ทราบต้องไม่ถูกหักคะแนน
@@ -86,6 +92,15 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 ใน PowerShell ใช้ `Copy-Item .env.example .env` แทน `cp`
 สร้าง JWT_SECRET ใน PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | % {[char]$_})`
 ADMIN_EMAIL / ADMIN_PASSWORD ใช้สร้างแอดมินคนแรกตอนตารางผู้ใช้ยังว่างเท่านั้น (ห้าม commit `.env`)
+
+หน้าเว็บ (ต้อง Node.js 18 ขึ้นไป; API ต้องรันอยู่ที่พอร์ต 8080):
+
+    cd frontend
+    npm install
+    npm run dev          # เปิด http://localhost:5173 (Vite ส่งต่อ /api ไปที่ API ให้เอง ไม่ต้องตั้ง CORS)
+    npm run dev:mock     # ดูหน้าจอด้วยข้อมูลจำลอง ไม่ต้องมี API
+
+ตั้ง `APP_BASE_URL` ใน `.env` เป็นที่อยู่เว็บ (เช่น `http://localhost:5173`) ถ้าอยากให้ API ส่งลิงก์เชิญเป็นลิงก์เต็ม (หน้าเว็บเติมโดเมนให้เองเมื่อเว้นว่าง) ตอน deploy ให้ใช้โดเมนเดียวกันสำหรับเว็บและ API (เส้นทาง `/api`) ผ่าน Caddy
 
 ตารางลีดและกฎคะแนน (`db/leads.sql`): ถ้าสร้างฐานข้อมูลใหม่ให้ต่อท้าย `db/init.sql` หรือ `docker compose down -v` แล้วขึ้นใหม่ ถ้าใช้ฐานข้อมูลเดิมอยู่ ให้รันไฟล์นี้เพิ่ม (รันซ้ำได้: ตารางใช้ `IF NOT EXISTS`, seed กฎใส่เฉพาะตอนตาราง `scoring_rules` ยังว่าง, ค่าตั้งค่าและคำสำคัญไม่ซ้ำ):
 
@@ -291,7 +306,10 @@ Endpoints:
 - db/init.sql: schema (products, campaigns, contents, legacy lead columns, lead/consent/scoring tables); ตาราง `users` สร้างตอน API เริ่มทำงาน
 - db/leads.sql: ตารางลีด consent event กฎคะแนน คำสำคัญ + seed (กฎหลัก 4 ข้อของพี่เลี้ยง และกฎเสริม)
 - backend/: Go (Fiber) API (`main.go` routes, `auth.go` login/roles, `ai.go` AI routes, `ai_jobs.go` ai_usage/โควตา/ตัวอัปเกรดงานคิว, `providers.go` Claude/Gemini, `fallback.go` เทมเพลตและ prompt, `jobs.go` + `redisq.go` คิวลองใหม่, `scoring.go` engine ให้คะแนนลีด (ไม่ต่อ DB), `scoring_test.go` unit test ของ engine, `leads.go` endpoint ลีดและกฎคะแนน)
+- backend/users.go: ลิงก์เชิญ/ลืมรหัสผ่าน ตรวจอีเมลและโดเมน คำเตือนผู้อนุมัติ; `channels.go` + `channel_reply.go`: ช่องทางแชต (mock) และตัวตอบ; `db/channels.sql`: unique index ลีดต่อช่องทาง
+- frontend/: เว็บ React + Vite (`src/pages/` แต่ละหน้า, `src/api.js` เรียก API, `src/mock.js` ข้อมูลจำลอง)
 - scripts/smoke-test.ps1: ทดสอบระบบเดิมผ่าน API (PowerShell)
+- scripts/channels-smoke-test.ps1: ทดสอบช่องทางแชตจำลอง (25 รายการ)
 - scripts/leads-smoke-test.ps1: ทดสอบ Lead API ด้วยข้อมูลจำลอง (PowerShell)
 - scripts/demo-seed.ps1: สร้างข้อมูลจำลอง (สินค้า แคมเปญ ลีด Cold/Warm/Hot) สำหรับเดโม
 - docs/DEMO_GUIDE.md: คู่มือเดโมและอัปเดตความคืบหน้า
@@ -307,8 +325,8 @@ Endpoints:
 
 ## Next
 
-1. หน้าเว็บขั้นต่ำ (ล็อกอิน, Manage Users, แคมเปญ, อนุมัติ, ลีด, แก้กฎ) — API ระบบบัญชีเสร็จแล้ว (ลิงก์เชิญ/ลืมรหัสผ่าน, ชื่อ, `auth_provider`) รอหน้าจอ
-2. ปรับเกณฑ์คะแนนตามความเห็นพี่เลี้ยง; รายงานสรุปลีดตามช่องทาง
-3. Daily Redis job for time-based events (`no_reply_3d`, `inactive_7d`) and nurturing
-4. Chat channel interface with a mock channel, then LINE (own test OA) with PDPA consent
-5. React + Vite frontend (including the scoring-rules management page), then HTTPS deployment (Caddy) with PROXY_HEADER set
+1. หน้าเว็บที่เหลือ: แคมเปญ (วางแผน + AI ร่างคอนเทนต์), ลีดและคะแนน, กฎคะแนน (เพิ่ม/แก้/ลบ/ลอง), ภาพรวม
+2. งานรายวันด้วย Redis: `no_reply_3d`, `inactive_7d` และการติดตามลีด (Cold ทุก 7 วัน สูงสุด 2 ครั้ง, Warm ทุก 3 วัน สูงสุด 3 ครั้ง ต้องมี marketing consent) · แจ้งเซลส์เมื่อลีดถูกส่งต่อ
+3. ปรับเกณฑ์คะแนนตามความเห็นพี่เลี้ยง; รายงานสรุปลีดตามช่องทางและผลย้อนกลับไปแผนรอบถัดไป
+4. ช่องทาง LINE (OA ทดสอบที่สร้างเอง + HTTPS webhook) บนแกนเดียวกับช่องทางแชตจำลอง
+5. deploy: Caddy (HTTPS, `PROXY_HEADER`), ย้ายตัวจำกัดล็อกอินไป Redis, สำรองฐานข้อมูล (`pg_dump`), ลบข้อมูลอัตโนมัติตามระยะเก็บ; เรื่องที่รันและผู้ดูแลหลังส่งมอบคุยตอนโปรเจกต์ใกล้เสร็จ

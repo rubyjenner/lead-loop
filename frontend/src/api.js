@@ -30,6 +30,10 @@ const MESSAGES = {
   'new password must be 8-72 characters': 'รหัสผ่านใหม่ต้องยาว 8–72 ตัวอักษร',
   'current password is incorrect': 'รหัสผ่านปัจจุบันไม่ถูกต้อง',
   'new password must be different from the current one': 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม',
+  'approver must be a different person from the content creator': 'อนุมัติเองไม่ได้ ต้องให้คนอื่นที่ไม่ใช่ผู้สร้างเป็นผู้อนุมัติ',
+  'content not found or not pending approval': 'คอนเทนต์นี้ไม่ได้อยู่ในสถานะรออนุมัติแล้ว (อาจมีคนจัดการไปก่อนหน้า) รีเฟรชรายการ',
+  'content not found or not in draft/rejected status': 'ส่งขออนุมัติไม่ได้ คอนเทนต์นี้ไม่ได้อยู่ในสถานะร่างหรือถูกปฏิเสธ',
+  'forbidden for your role': 'บทบาทของคุณทำรายการนี้ไม่ได้',
   'user is disabled': 'บัญชีนี้ถูกปิดใช้งานอยู่',
 }
 

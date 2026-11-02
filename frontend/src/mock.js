@@ -21,6 +21,20 @@ const audit = [
   ['user_updated', 'admin@example.com', 'user:6', 'role sales->sales, active true->false'],
 ].map((r, i) => ({ id: 100 - i, at: ago(i * 47 + 2), actor_id: 1, actor_email: r[1], action: r[0], target: r[2], ip: '172.18.0.1', detail: r[3] }))
 
+let contents = [
+  { id: 14, campaign_id: 3, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', channel: 'facebook', status: 'pending_approval', generated_by: 'gemini', created_by: 'napat.m@vannessplus.com', approved_by: null, created_at: ago(55),
+    body: 'หูฟังไร้สาย Aria เสียงใส แบตอึด 30 ชั่วโมง ราคา 2,490 บาท\nสั่งวันนี้ รับฟรีเคสพกพา ถึงสิ้นเดือนนี้เท่านั้น' },
+  { id: 13, campaign_id: 3, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', channel: 'line', status: 'pending_approval', generated_by: 'human', created_by: 'admin@example.com', approved_by: null, created_at: ago(140),
+    body: 'สนใจหูฟัง Aria ทักแชตนี้ได้เลยค่ะ ทีมงานพร้อมตอบเรื่องราคาและการจัดส่ง' },
+  { id: 12, campaign_id: 2, campaign_name: 'ลดล้างสต็อกมือถือมือสอง', channel: 'facebook', status: 'pending_approval', generated_by: 'claude', created_by: 'pimchanok.s@vannessplus.com', approved_by: null, created_at: ago(60 * 5),
+    body: 'มือถือมือสองสภาพดี แบตเตอรี่ 90% ราคา 12,900 บาท\nตรวจสภาพก่อนส่งทุกเครื่อง' },
+  { id: 11, campaign_id: 2, campaign_name: 'ลดล้างสต็อกมือถือมือสอง', channel: 'line', status: 'draft', generated_by: 'template', created_by: 'napat.m@vannessplus.com', approved_by: null, created_at: ago(60 * 8),
+    body: 'มือถือมือสอง ราคา 12,900 บาท ทักมาสอบถามรายละเอียดได้เลย' },
+  { id: 10, campaign_id: 1, campaign_name: 'โปรโมชันต้นปี', channel: 'facebook', status: 'approved', generated_by: 'gemini', created_by: 'napat.m@vannessplus.com', approved_by: 'pimchanok.s@vannessplus.com', created_at: ago(60 * 30),
+    body: 'โปรต้นปี ลด 15% สำหรับสมาชิกใหม่ ถึงสิ้นเดือนนี้' },
+  { id: 9, campaign_id: 1, campaign_name: 'โปรโมชันต้นปี', channel: 'line', status: 'rejected', generated_by: 'claude', created_by: 'pimchanok.s@vannessplus.com', approved_by: null, created_at: ago(60 * 31),
+    body: 'ลดแรงที่สุดในประเทศ! ห้ามพลาด' },
+]
 const ok = (json, status = 200) => ({ status, json })
 const err = (status, error, code) => ({ status, json: { error, code } })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -66,6 +80,22 @@ export async function mockRequest(method, path, body, token) {
     if (!u.active) return err(409, 'user is disabled')
     u.pending_link = true
     return ok({ reset_url: `http://localhost:5173/set-password?token=mockResetToken${u.id}b7Kd4WnP1zS`, expires_at: new Date(now + 3600e3).toISOString() }, 201)
+  }
+  if (method === 'GET' && path.startsWith('/contents')) {
+    const st = new URLSearchParams(path.split('?')[1] || '').get('status')
+    return ok(contents.filter((c) => !st || c.status === st))
+  }
+  m = path.match(/^\/contents\/(\d+)\/(submit|approve|reject)$/)
+  if (method === 'POST' && m) {
+    const c = contents.find((x) => x.id === +m[1])
+    if (!c) return err(409, 'content not found or not pending approval')
+    if (m[2] === 'submit') { c.status = 'pending_approval'; return ok({ status: 'pending_approval' }) }
+    if (c.status !== 'pending_approval') return err(409, 'content not found or not pending approval')
+    if (m[2] === 'approve') {
+      if (c.created_by === 'admin@example.com') return err(403, 'approver must be a different person from the content creator')
+      c.status = 'approved'; c.approved_by = 'admin@example.com'; return ok({ status: 'approved' })
+    }
+    c.status = 'rejected'; return ok({ status: 'rejected' })
   }
   if (method === 'GET' && path.startsWith('/audit-log')) return ok(audit)
   return err(404, 'not found')

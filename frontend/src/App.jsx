@@ -7,11 +7,12 @@ import ChangePassword from './pages/ChangePassword.jsx'
 import Users from './pages/Users.jsx'
 import Audit from './pages/Audit.jsx'
 import Soon from './pages/Soon.jsx'
+import Approvals from './pages/Approvals.jsx'
 
 const WORK = [
   ['/overview', 'ภาพรวม'],
   ['/campaigns', 'แคมเปญ'],
-  ['/approvals', 'อนุมัติคอนเทนต์'],
+  ['/approvals', 'อนุมัติคอนเทนต์', true],
   ['/leads', 'ลีด'],
   ['/scoring', 'กฎคะแนน'],
 ]
@@ -28,9 +29,9 @@ function Shell() {
         <div className="brand"><LoopMark size={26} /><span>LeadLoop</span></div>
         <nav aria-label="เมนูหลัก">
           <div className="nav-group">งานประจำวัน</div>
-          {WORK.map(([to, label]) => (
-            <NavLink key={to} to={to} className="nav-item nav-soon">
-              {label}<span className="soon-tag">เร็วๆ นี้</span>
+          {WORK.map(([to, label, ready]) => (
+            <NavLink key={to} to={to} className={ready ? 'nav-item' : 'nav-item nav-soon'}>
+              {label}{!ready && <span className="soon-tag">เร็วๆ นี้</span>}
             </NavLink>
           ))}
           {user.role === 'admin' && (
@@ -72,7 +73,8 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/users" element={<Users />} />
         <Route path="/audit" element={<Audit />} />
-        {WORK.map(([to, label]) => (
+        <Route path="/approvals" element={<Approvals />} />
+        {WORK.filter((w) => !w[2]).map(([to, label]) => (
           <Route key={to} path={to} element={<Soon title={label} />} />
         ))}
       </Route>

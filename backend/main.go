@@ -252,6 +252,41 @@ func main() {
 		return c.JSON(out)
 	})
 
+	// All contents across campaigns, newest first (max 200), with the campaign name.
+	// Optional filter: /contents?status=pending_approval. Used by the approvals screen.
+	app.Get("/contents", func(c *fiber.Ctx) error {
+		status := c.Query("status")
+		switch status {
+		case "", "draft", "pending_approval", "approved", "published", "rejected":
+		default:
+			return c.Status(400).JSON(fiber.Map{"error": "invalid status"})
+		}
+		rows, err := pool.Query(c.Context(),
+			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
+			        c.publish_at, c.created_at, c.generated_by, c.created_by, k.name
+			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id
+			 WHERE ($1 = '' OR c.status::text = $1)
+			 ORDER BY c.id DESC LIMIT 200`, status)
+		if err != nil {
+			return serverError(c, err)
+		}
+		defer rows.Close()
+		type row struct {
+			Content
+			CampaignName string `json:"campaign_name"`
+		}
+		out := []row{}
+		for rows.Next() {
+			var x row
+			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
+				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy, &x.CampaignName); err != nil {
+				return serverError(c, err)
+			}
+			out = append(out, x)
+		}
+		return c.JSON(out)
+	})
+
 	// draft or rejected -> pending_approval
 	app.Post("/contents/:id/submit", writers, func(c *fiber.Ctx) error {
 		return setContentStatus(c, pool,
