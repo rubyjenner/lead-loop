@@ -35,6 +35,15 @@ let contents = [
   { id: 9, campaign_id: 1, campaign_name: 'โปรโมชันต้นปี', channel: 'line', status: 'rejected', generated_by: 'claude', created_by: 'pimchanok.s@vannessplus.com', approved_by: null, created_at: ago(60 * 31),
     body: 'ลดแรงที่สุดในประเทศ! ห้ามพลาด' },
 ]
+let products = [
+  { id: 1, name: 'มือถือมือสอง Smoke Phone', description: 'สภาพดี แบตเตอรี่ 90% ตรวจสภาพก่อนส่ง', price: 12900, brand_info: '', created_at: ago(60 * 24 * 6) },
+  { id: 2, name: 'หูฟังไร้สาย Aria', description: 'แบตอึด 30 ชั่วโมง กันน้ำ IPX4', price: 2490, brand_info: '', created_at: ago(60 * 24 * 4) },
+]
+let campaigns = [
+  { id: 3, product_id: 2, name: 'เปิดตัวหูฟังไร้สาย Aria', goal: 'ได้ลีด 80 คนภายในเดือนนี้', target_audience: 'คนทำงานรุ่นใหม่ ชอบฟังเพลงระหว่างเดินทาง', budget: 20000, status: 'planned', created_at: ago(60 * 24 * 3), plan: 'เป้าหมาย: ได้ลีด 80 คนภายในเดือนนี้ ด้วยงบ 20,000 บาท\n\n1) สัปดาห์ที่ 1: โพสต์เปิดตัวใน Facebook เน้นแบตอึด 30 ชั่วโมงและราคา 2,490 บาท\n2) สัปดาห์ที่ 2: ข้อความ LINE ตอบคำถามราคาและการใช้งาน ให้ลูกค้าที่สนใจกดยินยอมก่อนคุย\n3) สัปดาห์ที่ 3–4: ติดตามลีดที่ถามราคา ส่งต่อเซลส์เมื่อคะแนนถึงเกณฑ์\n\nวัดผล: จำนวนลีดที่ยินยอม, อัตราตอบกลับ, ลีดที่ถูกส่งต่อ', plan_generated_by: 'gemini' },
+  { id: 2, product_id: 1, name: 'ลดล้างสต็อกมือถือมือสอง', goal: 'ปิดการขาย 10 เครื่อง', target_audience: 'นักศึกษา', budget: 8000, status: 'draft', created_at: ago(60 * 24 * 5), plan: '', plan_generated_by: '' },
+  { id: 1, product_id: null, name: 'โปรโมชันต้นปี', goal: '', target_audience: '', budget: 0, status: 'finished', created_at: ago(60 * 24 * 20), plan: '', plan_generated_by: '' },
+]
 const ok = (json, status = 200) => ({ status, json })
 const err = (status, error, code) => ({ status, json: { error, code } })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -81,6 +90,39 @@ export async function mockRequest(method, path, body, token) {
     u.pending_link = true
     return ok({ reset_url: `http://localhost:5173/set-password?token=mockResetToken${u.id}b7Kd4WnP1zS`, expires_at: new Date(now + 3600e3).toISOString() }, 201)
   }
+  if (method === 'GET' && path === '/campaigns') return ok(campaigns.map(({ plan, plan_generated_by, ...c }) => c))
+  if (method === 'GET' && path === '/products') return ok(products)
+  if (method === 'POST' && path === '/products') {
+    const p = { id: products.length + 1, name: body.name, description: body.description || '', price: body.price ?? null, brand_info: body.brand_info || '', created_at: new Date().toISOString() }
+    products.push(p); return ok(p, 201)
+  }
+  if (method === 'POST' && path === '/campaigns') {
+    const c = { id: campaigns.length + 1, product_id: body.product_id ?? null, name: body.name, goal: body.goal || '', target_audience: body.target_audience || '', budget: body.budget || 0, status: 'draft', created_at: new Date().toISOString(), plan: '', plan_generated_by: '' }
+    campaigns.unshift(c); return ok(c, 201)
+  }
+  m = path.match(/^\/campaigns\/(\d+)$/)
+  if (method === 'GET' && m) {
+    const c = campaigns.find((x) => x.id === +m[1])
+    if (!c) return err(404, 'campaign not found')
+    return ok({ ...c, product_name: products.find((p) => p.id === c.product_id)?.name ?? null })
+  }
+  m = path.match(/^\/campaigns\/(\d+)\/contents$/)
+  if (method === 'GET' && m) return ok(contents.filter((c) => c.campaign_id === +m[1]))
+  m = path.match(/^\/campaigns\/(\d+)\/plan$/)
+  if (method === 'POST' && m) {
+    const c = campaigns.find((x) => x.id === +m[1])
+    c.plan = `เป้าหมาย: ${c.goal || 'ยังไม่ระบุ'} งบ ${c.budget} บาท\n\n1) ประกาศสินค้าและราคาจริงในช่องทางหลัก\n2) ตอบคำถามจากข้อมูลสินค้า ไม่แต่งข้อมูลเพิ่ม\n3) ติดตามลีดที่ยินยอม ส่งต่อเซลส์เมื่อถึงเกณฑ์`
+    c.plan_generated_by = 'gemini'; if (c.status === 'draft') c.status = 'planned'
+    return ok({ campaign_id: c.id, plan: c.plan, generated_by: 'gemini', fallback_reason: '', retry_queued: false })
+  }
+  m = path.match(/^\/campaigns\/(\d+)\/generate-contents$/)
+  if (method === 'POST' && m) {
+    const c = campaigns.find((x) => x.id === +m[1])
+    const out = Array.from({ length: body.count }, (_, i) => ({ id: 100 + contents.length + i, campaign_id: c.id, campaign_name: c.name, channel: body.channel, status: 'draft', generated_by: 'gemini', created_by: 'admin@example.com', approved_by: null, created_at: new Date().toISOString(), body: `ร่างที่ ${i + 1}: ${c.name} ${products.find((p) => p.id === c.product_id)?.description || ''}` }))
+    contents.unshift(...out)
+    return ok({ generated_by: 'gemini', fallback_reason: '', retry_queued: false, contents: out }, 201)
+  }
+  if (method === 'GET' && path === '/ai-usage/me') return ok({ used_today: 4, per_user_daily_limit: 30, token_cap_daily: 0 })
   if (method === 'GET' && path.startsWith('/contents')) {
     const st = new URLSearchParams(path.split('?')[1] || '').get('status')
     return ok(contents.filter((c) => !st || c.status === st))

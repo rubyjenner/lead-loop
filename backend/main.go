@@ -161,6 +161,33 @@ func main() {
 		return c.JSON(out)
 	})
 
+	// One campaign with its AI plan and product name (the list above does not carry the plan text).
+	app.Get("/campaigns/:id", func(c *fiber.Ctx) error {
+		id, err := c.ParamsInt("id")
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
+		}
+		var x struct {
+			Campaign
+			Plan            string  `json:"plan"`
+			PlanGeneratedBy string  `json:"plan_generated_by"`
+			ProductName     *string `json:"product_name"`
+		}
+		err = pool.QueryRow(c.Context(),
+			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
+			        c.created_at, c.plan, c.plan_generated_by, p.name
+			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id WHERE c.id=$1`, id,
+		).Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status,
+			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
+		}
+		if err != nil {
+			return serverError(c, err)
+		}
+		return c.JSON(x)
+	})
+
 	// Step 1: product and brand info the AI will use (and must not invent beyond)
 	app.Post("/products", writers, func(c *fiber.Ctx) error {
 		var in Product

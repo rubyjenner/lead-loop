@@ -109,3 +109,14 @@ export const ROLES = {
   marketing: { label: 'การตลาด', help: 'วางแผนแคมเปญ ให้ AI ร่างคอนเทนต์ อนุมัติ และจัดการลีด' },
   sales: { label: 'เซลส์', help: 'ดูข้อมูล รับลีดที่ส่งต่อมา และอัปเดตสถานะการขาย' },
 }
+
+export const CHANNELS = { line: 'LINE', facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', email: 'อีเมล' }
+export const SOURCE = {
+  claude: 'ร่างโดย AI (Claude)',
+  gemini: 'ร่างโดย AI (Gemini)',
+  template: 'ร่างจากเทมเพลต (AI ใช้ไม่ได้ตอนนั้น)',
+  human: 'เขียนโดยคน',
+}
+export const CAMPAIGN_STATUS = { draft: 'ร่าง', planned: 'วางแผนแล้ว', running: 'กำลังรัน', finished: 'จบแล้ว' }
+export const CONTENT_STATUS = { draft: 'ร่าง', pending_approval: 'รออนุมัติ', approved: 'อนุมัติแล้ว', published: 'เผยแพร่แล้ว', rejected: 'ถูกปฏิเสธ' }
+export const baht = (v) => (v == null ? '-' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) + ' บาท')

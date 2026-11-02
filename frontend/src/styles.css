@@ -192,3 +192,28 @@ button, input, select { font: inherit; color: inherit; }
 .src { font-size: 13px; color: var(--muted); }
 .src-template { color: var(--amber); }
 .chip { white-space: nowrap; }
+
+/* campaigns */
+.link { color: var(--loop-d); font-weight: 500; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--loop-d); cursor: pointer; font: inherit; font-weight: 500; text-decoration: underline; }
+.clip { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+.tag-draft { background: #e3e9ea; color: var(--ink-3); }
+.tag-planned { background: var(--loop-soft); color: var(--loop-d); }
+.tag-running { background: var(--ok-soft); color: var(--ok); }
+.tag-finished { background: #e3e9ea; color: var(--muted); }
+.tag-c-pending_approval { background: var(--amber-soft); color: var(--amber); }
+.tag-c-approved, .tag-c-published { background: var(--ok-soft); color: var(--ok); }
+.tag-c-rejected { background: var(--danger-soft); color: var(--danger); }
+.tag-c-draft { background: #e3e9ea; color: var(--ink-3); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 20px; margin: 0 0 20px; max-width: 760px; }
+.facts dt { font-size: 13px; color: var(--muted); }
+.facts dd { margin: 0; font-weight: 500; }
+.block { max-width: 760px; margin-bottom: 28px; }
+.block-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.plan { white-space: pre-wrap; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 20px; margin: 0 0 8px; line-height: 1.75; }
+.genbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.genbar select { border: 1px solid #b7c5c9; border-radius: var(--r-sm); padding: 8px 10px; background: var(--paper); }
+textarea { width: 100%; border: 1px solid #b7c5c9; background: var(--paper); border-radius: var(--r-sm); padding: 9px 12px; font: inherit; resize: vertical; }
+textarea:focus { border-color: var(--loop); outline: 2px solid var(--loop-soft); }

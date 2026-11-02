@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { Modal, Toast, timeAgo } from '../ui.jsx'
+import { CHANNELS, Modal, SOURCE, Toast, timeAgo } from '../ui.jsx'
 
 const TABS = [
   ['pending_approval', 'รออนุมัติ'],
@@ -9,13 +9,6 @@ const TABS = [
   ['approved', 'อนุมัติแล้ว'],
   ['rejected', 'ถูกปฏิเสธ'],
 ]
-const CHANNELS = { facebook: 'Facebook', line: 'LINE', instagram: 'Instagram', tiktok: 'TikTok', email: 'อีเมล' }
-const SOURCE = {
-  claude: 'ร่างโดย AI (Claude)',
-  gemini: 'ร่างโดย AI (Gemini)',
-  template: 'ร่างจากเทมเพลต (AI ใช้ไม่ได้ตอนนั้น)',
-  human: 'เขียนโดยคน',
-}
 
 export default function Approvals() {
   const { user } = useAuth()

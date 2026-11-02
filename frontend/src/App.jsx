@@ -8,10 +8,12 @@ import Users from './pages/Users.jsx'
 import Audit from './pages/Audit.jsx'
 import Soon from './pages/Soon.jsx'
 import Approvals from './pages/Approvals.jsx'
+import Campaigns from './pages/Campaigns.jsx'
+import CampaignDetail from './pages/CampaignDetail.jsx'
 
 const WORK = [
   ['/overview', 'ภาพรวม'],
-  ['/campaigns', 'แคมเปญ'],
+  ['/campaigns', 'แคมเปญ', true],
   ['/approvals', 'อนุมัติคอนเทนต์', true],
   ['/leads', 'ลีด'],
   ['/scoring', 'กฎคะแนน'],
@@ -73,6 +75,8 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/users" element={<Users />} />
         <Route path="/audit" element={<Audit />} />
+        <Route path="/campaigns" element={<Campaigns />} />
+        <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/approvals" element={<Approvals />} />
         {WORK.filter((w) => !w[2]).map(([to, label]) => (
           <Route key={to} path={to} element={<Soon title={label} />} />
