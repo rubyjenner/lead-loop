@@ -217,3 +217,23 @@ button, input, select { font: inherit; color: inherit; }
 .genbar select { border: 1px solid #b7c5c9; border-radius: var(--r-sm); padding: 8px 10px; background: var(--paper); }
 textarea { width: 100%; border: 1px solid #b7c5c9; background: var(--paper); border-radius: var(--r-sm); padding: 9px 12px; font: inherit; resize: vertical; }
 textarea:focus { border-color: var(--loop); outline: 2px solid var(--loop-soft); }
+
+/* ===== leads, scoring, overview ===== */
+.lvl{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+.lvl-cold{background:#e8eef6;color:#3b5878}.lvl-warm{background:#fdecc8;color:#8a5a00}.lvl-hot{background:#fbd9d3;color:#a1291a}.lvl-disqualified{background:#eceae6;color:#6b6760}
+.scorecell{display:flex;align-items:center;gap:8px;min-width:120px}
+.bar{flex:1;height:6px;border-radius:3px;background:#ece9e3;overflow:hidden;min-width:48px}.bar i{display:block;height:100%;background:var(--loop)}
+.tag-l-qualified{background:#dff1e6;color:#1d6b3f}.tag-l-handed_off{background:#dde8fb;color:#264a8f}.tag-l-new,.tag-l-nurturing{background:#eceae6;color:#55514a}.tag-l-closed{background:#dff1e6;color:#1d6b3f}.tag-l-lost{background:#fbd9d3;color:#a1291a}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:16px}
+.panel h2{font-size:16px;margin:0 0 10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.stat{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:14px 16px;text-decoration:none;color:inherit;display:block}
+.stat b{display:block;font-size:28px;line-height:1.2}.stat span{font-size:13px;color:var(--muted)}
+.pts{font-variant-numeric:tabular-nums;font-weight:600}.pts-neg{color:#a1291a}.pts-pos{color:#1d6b3f}
+.catrow td{background:#f6f4ef;font-weight:600;font-size:13px}
+.checks{display:flex;flex-wrap:wrap;gap:6px 14px}.checks label{display:flex;gap:6px;align-items:center;font-size:14px}
+textarea.code{font-family:ui-monospace,Consolas,monospace;font-size:13px;width:100%}
+.bd li{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)}.bd{list-style:none;padding:0;margin:0}
+.consent{display:flex;gap:10px;flex-wrap:wrap;align-items:center}

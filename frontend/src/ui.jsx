@@ -120,3 +120,16 @@ export const SOURCE = {
 export const CAMPAIGN_STATUS = { draft: 'ร่าง', planned: 'วางแผนแล้ว', running: 'กำลังรัน', finished: 'จบแล้ว' }
 export const CONTENT_STATUS = { draft: 'ร่าง', pending_approval: 'รออนุมัติ', approved: 'อนุมัติแล้ว', published: 'เผยแพร่แล้ว', rejected: 'ถูกปฏิเสธ' }
 export const baht = (v) => (v == null ? '-' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) + ' บาท')
+
+export const LEVEL = { cold: 'Cold', warm: 'Warm', hot: 'Hot', disqualified: 'ตัดสิทธิ์' }
+export const LEAD_STATUS = { new: 'ใหม่', nurturing: 'กำลังติดตาม', qualified: 'พร้อมส่งต่อ', handed_off: 'ส่งต่อเซลส์แล้ว', closed: 'ปิดการขาย', lost: 'ไม่สำเร็จ' }
+export const LEAD_CHANNELS = { line: 'LINE', mock: 'แชตจำลอง', web: 'เว็บ' }
+export const RULE_CATEGORY = { intent: 'ความสนใจ', fit: 'ความเหมาะสม', engagement: 'การตอบสนอง', negative: 'สัญญาณลบ' }
+export const EVENTS = {
+  asked_details: 'ทักขอรายละเอียด', requested_human: 'ขอคุยกับเจ้าหน้าที่', asked_price: 'สอบถามราคา', requested_callback: 'ให้ติดต่อกลับ',
+  asked_condition: 'ถามสภาพ/แบตเตอรี่', asked_installment: 'ถามผ่อน', asked_shipping: 'ถามการจัดส่ง', asked_negotiate: 'ต่อรองราคา',
+  requested_visit: 'ขอนัดดูเครื่อง', gave_budget: 'ระบุงบ', replied_fast: 'ตอบกลับเร็ว', returned_after_1d: 'กลับมาคุยหลังหาย 1 วัน',
+  no_reply_3d: 'ไม่ตอบ 3 วัน', inactive_7d: 'ไม่มีความเคลื่อนไหว 7 วัน', unsubscribed: 'ขอเลิกรับข่าวสาร',
+}
+export const eventLabel = (k) => EVENTS[k] || k
+export const canManage = (user) => user.role === 'admin' || user.role === 'marketing'

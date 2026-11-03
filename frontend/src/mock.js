@@ -44,6 +44,29 @@ let campaigns = [
   { id: 2, product_id: 1, name: 'ลดล้างสต็อกมือถือมือสอง', goal: 'ปิดการขาย 10 เครื่อง', target_audience: 'นักศึกษา', budget: 8000, status: 'draft', created_at: ago(60 * 24 * 5), plan: '', plan_generated_by: '' },
   { id: 1, product_id: null, name: 'โปรโมชันต้นปี', goal: '', target_audience: '', budget: 0, status: 'finished', created_at: ago(60 * 24 * 20), plan: '', plan_generated_by: '' },
 ]
+
+let leadSeq = 20
+const leads = [
+  { id: 1, display_name: 'ลูกค้าทดสอบ 001', channel: 'mock', budget: 12900, status: 'qualified', score: 70, level: 'hot', consent_general: true, consent_marketing: true, created_at: ago(60 * 5), score_breakdown: [{ rule: 'ขอคุยกับเจ้าหน้าที่', points: 30 }, { rule: 'สอบถามราคา', points: 10 }, { rule: 'ทักขอรายละเอียด', points: 10 }, { rule: 'งบเพียงพอกับราคาสินค้า', points: 20 }] },
+  { id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', budget: 9000, status: 'nurturing', score: 35, level: 'warm', consent_general: true, consent_marketing: true, created_at: ago(60 * 26), score_breakdown: [{ rule: 'สอบถามราคา', points: 10 }, { rule: 'ถามผ่อน', points: 15 }, { rule: 'ทักขอรายละเอียด', points: 10 }] },
+  { id: 3, display_name: 'ลูกค้าทดสอบ 003', channel: 'line', budget: null, status: 'new', score: 10, level: 'cold', consent_general: true, consent_marketing: false, created_at: ago(60 * 50), score_breakdown: [{ rule: 'ทักขอรายละเอียด', points: 10 }] },
+  { id: 4, display_name: 'ลูกค้าทดสอบ 004', channel: 'mock', budget: 15000, status: 'handed_off', score: 60, level: 'hot', consent_general: true, consent_marketing: false, created_at: ago(60 * 80), score_breakdown: [{ rule: 'ให้ติดต่อกลับ', points: 30 }, { rule: 'สอบถามราคา', points: 10 }, { rule: 'ระบุงบ', points: 20 }] },
+  { id: 5, display_name: 'ลูกค้าทดสอบ 005', channel: 'web', budget: null, status: 'lost', score: 0, level: 'disqualified', consent_general: true, consent_marketing: false, created_at: ago(60 * 120), score_breakdown: [{ rule: 'ขอเลิกรับข่าวสาร', points: -100 }] },
+]
+let rules = [
+  { id: 1, name: 'ทักขอรายละเอียด', description: 'ลูกค้าขอรายละเอียดสินค้า', category: 'intent', is_core: true, condition: { event: 'asked_details' }, points: 10, mode: 'once', max_total: null, active: true },
+  { id: 2, name: 'ขอคุยกับเจ้าหน้าที่', description: 'ส่งต่อเซลส์ทันที', category: 'intent', is_core: true, condition: { event: 'requested_human' }, points: 30, mode: 'once', max_total: null, active: true },
+  { id: 3, name: 'สอบถามราคา', description: '', category: 'intent', is_core: true, condition: { event: 'asked_price' }, points: 10, mode: 'once', max_total: null, active: true },
+  { id: 4, name: 'ให้ติดต่อกลับ', description: 'ส่งต่อเซลส์ทันที', category: 'intent', is_core: true, condition: { event: 'requested_callback' }, points: 30, mode: 'once', max_total: null, active: true },
+  { id: 5, name: 'ถามผ่อน', description: '', category: 'intent', is_core: false, condition: { event: 'asked_installment' }, points: 15, mode: 'once', max_total: null, active: true },
+  { id: 6, name: 'งบเพียงพอกับราคาสินค้า', description: 'งบ ≥ ราคาสินค้า', category: 'fit', is_core: false, condition: { lead: { field: 'budget', op: '>=', value: 12900 } }, points: 20, mode: 'once', max_total: null, active: true },
+  { id: 7, name: 'ตอบกลับเร็ว', description: '', category: 'engagement', is_core: false, condition: { event: 'replied_fast' }, points: 5, mode: 'each', max_total: 15, active: true },
+  { id: 8, name: 'ไม่ตอบ 3 วัน', description: '', category: 'negative', is_core: false, condition: { event: 'no_reply_3d' }, points: -10, mode: 'once', max_total: null, active: false },
+]
+const settings = { handoff_threshold: 50, level_warm_min: 25, score_min: 0, score_max: 100, followup_cold: { every_days: 7, max: 2 }, followup_warm: { every_days: 3, max: 3 } }
+const KW = { asked_details: ['รายละเอียด', 'สนใจ'], asked_price: ['ราคา', 'เท่าไหร่'], requested_human: ['คุยกับเจ้าหน้าที่'], requested_callback: ['โทรกลับ', 'ติดต่อกลับ'], asked_installment: ['ผ่อน'], unsubscribed: ['เลิกรับ'] }
+const RULE_OF = { asked_details: 1, requested_human: 2, asked_price: 3, requested_callback: 4, asked_installment: 5 }
+const level = (sc) => (sc >= 50 ? 'hot' : sc >= 25 ? 'warm' : 'cold')
 const ok = (json, status = 200) => ({ status, json })
 const err = (status, error, code) => ({ status, json: { error, code } })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -138,6 +161,73 @@ export async function mockRequest(method, path, body, token) {
       c.status = 'approved'; c.approved_by = 'admin@example.com'; return ok({ status: 'approved' })
     }
     c.status = 'rejected'; return ok({ status: 'rejected' })
+  }
+
+  if (path.startsWith('/leads') || path.startsWith('/scoring') || path === '/event-keywords') {
+    const role = 'admin'
+    let mm
+    if (method === 'GET' && path.startsWith('/leads?') || (method === 'GET' && path === '/leads')) {
+      const q = new URLSearchParams(path.split('?')[1] || '')
+      return ok(leads.filter((l) => (!q.get('level') || l.level === q.get('level')) && (!q.get('status') || l.status === q.get('status'))).sort((a, b) => b.score - a.score).map(({ score_breakdown, ...l }) => l))
+    }
+    if (method === 'POST' && path === '/leads') {
+      if (!body.consent_general) return err(400, 'consent_general=true and consent_version are required before a lead can be stored')
+      const l = { id: ++leadSeq, display_name: body.display_name, channel: body.channel, budget: body.budget ?? null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }
+      leads.push(l); return ok({ id: l.id }, 201)
+    }
+    mm = path.match(/^\/leads\/(\d+)$/)
+    if (mm) {
+      const i = leads.findIndex((x) => x.id === +mm[1])
+      if (i < 0) return err(404, 'lead not found')
+      if (method === 'GET') return ok(leads[i])
+      if (method === 'DELETE') { leads.splice(i, 1); return ok({ ok: true }) }
+    }
+    mm = path.match(/^\/leads\/(\d+)\/(message|status|consent)$/)
+    if (mm && method === 'POST') {
+      const l = leads.find((x) => x.id === +mm[1]); if (!l) return err(404, 'lead not found')
+      if (mm[2] === 'status') { l.status = body.status; return ok({ status: l.status }) }
+      if (mm[2] === 'consent') {
+        if (body.kind === 'general' && body.action === 'withdrawn') { l.consent_general = false; l.consent_marketing = false; l.status = 'lost' } else if (body.kind === 'marketing') l.consent_marketing = body.action === 'granted'
+        return ok({ ok: true })
+      }
+      const detected = Object.keys(KW).filter((e) => KW[e].some((w) => (body.text || '').includes(w)))
+      detected.forEach((e) => {
+        const r = rules.find((x) => x.id === RULE_OF[e]); if (!r || !r.active || l.score_breakdown.some((b) => b.rule === r.name)) return
+        l.score += r.points; l.score_breakdown.push({ rule: r.name, points: r.points })
+      })
+      l.score = Math.max(0, Math.min(100, l.score)); l.level = level(l.score)
+      if (l.score >= 50 && ['new', 'nurturing'].includes(l.status)) l.status = 'qualified'
+      else if (l.score >= 25 && l.status === 'new') l.status = 'nurturing'
+      return ok({ detected, score: l.score, level: l.level })
+    }
+    if (method === 'GET' && path === '/scoring-rules') return ok(rules)
+    if (method === 'GET' && path === '/scoring-settings') return ok(settings)
+    if (method === 'GET' && path === '/event-keywords') return ok(KW)
+    if (method === 'POST' && path === '/scoring-rules/recalculate') return ok({ recalculated: leads.length, total: leads.length })
+    if (method === 'POST' && path === '/scoring-rules/test') {
+      const types = (body.events || []).map((e) => e.type)
+      const breakdown = rules.filter((r) => r.active && r.condition.event && types.includes(r.condition.event)).map((r) => ({ rule_id: r.id, rule_name: r.name, matches: 1, points: r.points }))
+      rules.filter((r) => r.active && r.condition.lead && body.lead?.budget != null && body.product_price != null && body.lead.budget >= body.product_price).forEach((r) => breakdown.push({ rule_id: r.id, rule_name: r.name, matches: 1, points: r.points }))
+      const score = Math.max(0, Math.min(100, breakdown.reduce((a, b) => a + b.points, 0)))
+      const imm = types.includes('requested_human') || types.includes('requested_callback')
+      return ok({ score, level: level(score), qualified: score >= 50 || imm, immediate_handoff: imm, disqualified: false, breakdown })
+    }
+    if (method === 'POST' && path === '/scoring-rules') {
+      const r = { id: 100 + rules.length, is_core: false, description: body.description || '', max_total: body.max_total ?? null, active: true, ...body }
+      rules.push(r); return ok(r, 201)
+    }
+    mm = path.match(/^\/scoring-rules\/(\d+)$/)
+    if (mm) {
+      const r = rules.find((x) => x.id === +mm[1]); if (!r) return err(404, 'rule not found')
+      if (method === 'PATCH') {
+        if (r.is_core && body.active === false) return err(400, 'core rules cannot be disabled')
+        Object.assign(r, body); return ok(r)
+      }
+      if (method === 'DELETE') {
+        if (r.is_core) return err(400, 'core rules cannot be deleted')
+        rules = rules.filter((x) => x.id !== r.id); return ok({ ok: true, soft_deleted: false })
+      }
+    }
   }
   if (method === 'GET' && path.startsWith('/audit-log')) return ok(audit)
   return err(404, 'not found')

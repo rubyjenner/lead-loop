@@ -1,0 +1,51 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api } from '../api.js'
+import { useAuth } from '../auth.jsx'
+import { LEVEL, LEAD_STATUS, timeAgo } from '../ui.jsx'
+import { LevelTag } from './Leads.jsx'
+
+export default function Overview() {
+  const { user } = useAuth()
+  const [d, setD] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    Promise.all([api('GET', '/leads'), api('GET', '/contents?status=pending_approval'), api('GET', '/campaigns')])
+      .then(([leads, pending, campaigns]) => setD({ leads, pending, campaigns }))
+      .catch((e) => setError(e.message))
+  }, [])
+  if (error) return <div className="page"><div className="alert alert-error" role="alert">{error}</div></div>
+  if (!d) return <div className="page muted pad">กำลังโหลด…</div>
+  const { leads, pending, campaigns } = d
+  const by = (k, v) => leads.filter((l) => l[k] === v).length
+  const ready = leads.filter((l) => l.status === 'qualified')
+  const top = leads.filter((l) => l.status !== 'closed' && l.status !== 'lost').slice(0, 5)
+  return (
+    <div className="page">
+      <header className="page-head"><div><h1>สวัสดี {user.name || user.email}</h1><p className="muted">สรุปงานในวงจร: แคมเปญ → คอนเทนต์ → อนุมัติ → ลีดและคะแนน → ส่งต่อเซลส์</p></div></header>
+      <div className="stats">
+        <Link className="stat" to="/campaigns"><b>{campaigns.length}</b><span>แคมเปญทั้งหมด</span></Link>
+        <Link className="stat" to="/approvals"><b>{pending.length}</b><span>คอนเทนต์รออนุมัติ</span></Link>
+        <Link className="stat" to="/leads"><b>{leads.length}</b><span>ลีดทั้งหมด</span></Link>
+        <Link className="stat" to="/leads"><b>{ready.length}</b><span>ลีดพร้อมส่งต่อเซลส์</span></Link>
+        <Link className="stat" to="/leads"><b>{by('status', 'handed_off')}</b><span>ส่งต่อเซลส์แล้ว</span></Link>
+      </div>
+      <div className="grid2">
+        <section className="panel">
+          <h2>ลีดตามระดับ</h2>
+          <ul className="bd">
+            {['hot', 'warm', 'cold', 'disqualified'].map((k) => <li key={k}><span><LevelTag level={k} /></span><span className="pts">{by('level', k)}</span></li>)}
+          </ul>
+        </section>
+        <section className="panel">
+          <h2>ลีดคะแนนสูงที่ยังเปิดอยู่</h2>
+          {top.length === 0 ? <p className="muted">ยังไม่มีลีด</p> : (
+            <ul className="bd">
+              {top.map((l) => <li key={l.id}><Link className="link" to={`/leads/${l.id}`}>{l.display_name}</Link><span className="muted small">{LEAD_STATUS[l.status]} · <b className="pts">{l.score}</b> · {timeAgo(l.created_at)}</span></li>)}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}

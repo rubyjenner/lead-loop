@@ -10,13 +10,17 @@ import Soon from './pages/Soon.jsx'
 import Approvals from './pages/Approvals.jsx'
 import Campaigns from './pages/Campaigns.jsx'
 import CampaignDetail from './pages/CampaignDetail.jsx'
+import Overview from './pages/Overview.jsx'
+import Leads from './pages/Leads.jsx'
+import LeadDetail from './pages/LeadDetail.jsx'
+import Scoring from './pages/Scoring.jsx'
 
 const WORK = [
-  ['/overview', 'ภาพรวม'],
+  ['/overview', 'ภาพรวม', true],
   ['/campaigns', 'แคมเปญ', true],
   ['/approvals', 'อนุมัติคอนเทนต์', true],
-  ['/leads', 'ลีด'],
-  ['/scoring', 'กฎคะแนน'],
+  ['/leads', 'ลีด', true],
+  ['/scoring', 'กฎคะแนน', true],
 ]
 
 function Shell() {
@@ -78,6 +82,10 @@ export default function App() {
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/approvals" element={<Approvals />} />
+        <Route path="/overview" element={<Overview />} />
+        <Route path="/leads" element={<Leads />} />
+        <Route path="/leads/:id" element={<LeadDetail />} />
+        <Route path="/scoring" element={<Scoring />} />
         {WORK.filter((w) => !w[2]).map(([to, label]) => (
           <Route key={to} path={to} element={<Soon title={label} />} />
         ))}
