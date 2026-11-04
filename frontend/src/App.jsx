@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { api } from './api.js'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
 import { LoopMark, ROLES } from './ui.jsx'
@@ -15,6 +17,8 @@ import Leads from './pages/Leads.jsx'
 import LeadDetail from './pages/LeadDetail.jsx'
 import Scoring from './pages/Scoring.jsx'
 import Followups from './pages/Followups.jsx'
+import ChatTest from './pages/ChatTest.jsx'
+import Reports from './pages/Reports.jsx'
 
 const WORK = [
   ['/overview', 'ภาพรวม', true],
@@ -23,13 +27,24 @@ const WORK = [
   ['/leads', 'ลีด', true],
   ['/followups', 'ติดตามลีด', true],
   ['/scoring', 'กฎคะแนน', true],
+  ['/reports', 'รายงาน', true],
 ]
 
 function Shell() {
   const { user, logout } = useAuth()
   const loc = useLocation()
+  const [inbox, setInbox] = useState({})
+  useEffect(() => {
+    if (!user || user.mustChange) return undefined
+    let alive = true
+    const load = () => api('GET', '/inbox').then((d) => alive && setInbox(d || {})).catch(() => {})
+    load()
+    const t = setInterval(load, 60000)
+    return () => { alive = false; clearInterval(t) }
+  }, [loc.pathname, user])
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />
   if (user.mustChange) return <Navigate to="/change-password" replace />
+  const badge = { '/approvals': inbox.contents_to_approve, '/followups': inbox.followups_to_approve, '/leads': inbox.leads_ready }
   const initials = (user.name || user.email).trim().slice(0, 1).toUpperCase()
   return (
     <div className="shell">
@@ -39,9 +54,10 @@ function Shell() {
           <div className="nav-group">งานประจำวัน</div>
           {WORK.map(([to, label, ready]) => (
             <NavLink key={to} to={to} className={ready ? 'nav-item' : 'nav-item nav-soon'}>
-              {label}{!ready && <span className="soon-tag">เร็วๆ นี้</span>}
+              {label}{!ready && <span className="soon-tag">เร็วๆ นี้</span>}{badge[to] > 0 && <span className="nav-badge" aria-label={`${badge[to]} รายการรอ`}>{badge[to]}</span>}
             </NavLink>
           ))}
+          {(user.role === 'admin' || user.role === 'marketing') && <NavLink to="/chat-test" className="nav-item">ทดลองแชตลูกค้า</NavLink>}
           {user.role === 'admin' && (
             <>
               <div className="nav-group">ผู้ดูแลระบบ</div>
@@ -89,6 +105,8 @@ export default function App() {
         <Route path="/leads/:id" element={<LeadDetail />} />
         <Route path="/scoring" element={<Scoring />} />
         <Route path="/followups" element={<Followups />} />
+        <Route path="/chat-test" element={<ChatTest />} />
+        <Route path="/reports" element={<Reports />} />
         {WORK.filter((w) => !w[2]).map(([to, label]) => (
           <Route key={to} path={to} element={<Soon title={label} />} />
         ))}

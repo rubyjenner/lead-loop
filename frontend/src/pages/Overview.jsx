@@ -10,19 +10,28 @@ export default function Overview() {
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    Promise.all([api('GET', '/leads'), api('GET', '/contents?status=pending_approval'), api('GET', '/campaigns')])
-      .then(([leads, pending, campaigns]) => setD({ leads, pending, campaigns }))
+    Promise.all([api('GET', '/leads'), api('GET', '/contents?status=pending_approval'), api('GET', '/campaigns'), api('GET', '/inbox')])
+      .then(([leads, pending, campaigns, inbox]) => setD({ leads, pending, campaigns, inbox }))
       .catch((e) => setError(e.message))
   }, [])
   if (error) return <div className="page"><div className="alert alert-error" role="alert">{error}</div></div>
   if (!d) return <div className="page muted pad">กำลังโหลด…</div>
-  const { leads, pending, campaigns } = d
+  const { leads, pending, campaigns, inbox } = d
+  const todo = [
+    inbox.leads_ready > 0 && { to: '/leads', text: `${inbox.leads_ready} ลีดพร้อมส่งต่อ รอเซลส์รับ${inbox.leads_ready_oldest ? ` (รอนานสุด ${timeAgo(inbox.leads_ready_oldest).replace(' ที่แล้ว', '')})` : ''}` },
+    inbox.contents_to_approve > 0 && { to: '/approvals', text: `${inbox.contents_to_approve} คอนเทนต์รอคุณอนุมัติ` },
+    inbox.followups_to_approve > 0 && { to: '/followups', text: `${inbox.followups_to_approve} ร่างข้อความติดตามลีดรออนุมัติ` },
+  ].filter(Boolean)
   const by = (k, v) => leads.filter((l) => l[k] === v).length
   const ready = leads.filter((l) => l.status === 'qualified')
   const top = leads.filter((l) => l.status !== 'closed' && l.status !== 'lost').slice(0, 5)
   return (
     <div className="page">
       <header className="page-head"><div><h1>สวัสดี {user.name || user.email}</h1><p className="muted">สรุปงานในวงจร: แคมเปญ → คอนเทนต์ → อนุมัติ → ลีดและคะแนน → ส่งต่อเซลส์</p></div></header>
+      <section className="todo" aria-label="ต้องทำตอนนี้">
+        <h2>ต้องทำตอนนี้</h2>
+        {todo.length === 0 ? <p className="muted">ไม่มีงานค้างสำหรับคุณ</p> : <ul>{todo.map((t) => <li key={t.to}><Link className="link" to={t.to}>{t.text}</Link></li>)}</ul>}
+      </section>
       <div className="stats">
         <Link className="stat" to="/campaigns"><b>{campaigns.length}</b><span>แคมเปญทั้งหมด</span></Link>
         <Link className="stat" to="/approvals"><b>{pending.length}</b><span>คอนเทนต์รออนุมัติ</span></Link>

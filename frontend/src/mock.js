@@ -46,6 +46,7 @@ let campaigns = [
 ]
 
 let leadSeq = 20
+const chatMap = {}
 const leads = [
   { id: 1, display_name: 'ลูกค้าทดสอบ 001', channel: 'mock', budget: 12900, status: 'qualified', score: 70, level: 'hot', consent_general: true, consent_marketing: true, created_at: ago(60 * 5), score_breakdown: [{ rule: 'ขอคุยกับเจ้าหน้าที่', points: 30 }, { rule: 'สอบถามราคา', points: 10 }, { rule: 'ทักขอรายละเอียด', points: 10 }, { rule: 'งบเพียงพอกับราคาสินค้า', points: 20 }] },
   { id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', budget: 9000, status: 'nurturing', score: 35, level: 'warm', consent_general: true, consent_marketing: true, created_at: ago(60 * 26), score_breakdown: [{ rule: 'สอบถามราคา', points: 10 }, { rule: 'ถามผ่อน', points: 15 }, { rule: 'ทักขอรายละเอียด', points: 10 }] },
@@ -170,6 +171,46 @@ export async function mockRequest(method, path, body, token) {
     c.status = 'rejected'; return ok({ status: 'rejected' })
   }
 
+  if (method === 'GET' && path === '/inbox') {
+    return ok({ leads_ready: leads.filter((l) => l.status === 'qualified').length, leads_ready_oldest: ago(60 * 5), contents_to_approve: contents.filter((c) => c.status === 'pending_approval' && c.created_by !== 'admin@example.com').length, followups_to_approve: followups.filter((f) => f.status === 'pending_approval').length })
+  }
+  if (path.startsWith('/channels/mock/')) {
+    const ext = body?.external_id
+    if (path === '/channels/mock/consent' && method === 'POST') {
+      let id = chatMap[ext]
+      if (!id) {
+        const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้า (mock)', channel: 'mock', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }
+        leads.push(l); chatMap[ext] = id = l.id
+      }
+      return ok({ lead_id: id, created: true, reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
+    }
+    if (path === '/channels/mock/messages' && method === 'POST') {
+      const l = leads.find((x) => x.id === chatMap[ext])
+      if (!l) return ok({ needs_consent: true, consent_version: 'v1', reply: 'ก่อนคุยต่อ ขอความยินยอมให้ร้านเก็บและใช้ข้อมูลการสนทนาเพื่อตอบคำถามและติดต่อกลับ คุณสามารถถอนความยินยอมได้ทุกเมื่อ กด "ยอมรับ" เพื่อเริ่มคุยค่ะ', detected: [], score: 0, level: 'cold', qualified: false })
+      const detected = Object.keys(KW).filter((e) => KW[e].some((w) => (body.text || '').includes(w)))
+      if (detected.includes('unsubscribed')) l.consent_marketing = false
+      detected.forEach((e) => {
+        const r = rules.find((x) => x.id === RULE_OF[e]); if (!r || !r.active || l.score_breakdown.some((b) => b.rule === r.name)) return
+        l.score += r.points; l.score_breakdown.push({ rule: r.name, points: r.points })
+      })
+      l.score = Math.max(0, Math.min(100, l.score)); l.level = level(l.score)
+      if (l.score >= 50 && ['new', 'nurturing'].includes(l.status)) l.status = 'qualified'
+      else if (l.score >= 25 && l.status === 'new') l.status = 'nurturing'
+      let reply = 'ขอบคุณที่ทักมาค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย'
+      if (detected.includes('asked_price')) reply = 'หูฟังไร้สาย Aria ราคา 2,490 บาทค่ะ'
+      if (detected.includes('asked_details')) reply = 'รายละเอียด: แบตอึด 30 ชั่วโมง ตัดเสียงรบกวนค่ะ'
+      if (detected.includes('asked_installment')) reply = 'เรื่องผ่อนชำระ ขอให้ทีมงานตอบโดยตรงนะคะ'
+      if (detected.includes('requested_human') || detected.includes('requested_callback')) reply = 'ส่งเรื่องให้ทีมงานแล้วค่ะ จะติดต่อกลับโดยเร็ว'
+      if (detected.includes('unsubscribed')) reply = 'รับทราบค่ะ จะไม่ส่งข่าวสารอีก'
+      return ok({ lead_id: l.id, reply, detected, score: l.score, level: l.level, qualified: l.score >= 50, immediate_handoff: false })
+    }
+  }
+  if (method === 'GET' && path === '/reports/summary') {
+    return ok({ total: 40, funnel: { new: 12, nurturing: 9, qualified: 4, handed_off: 6, closed: 6, lost: 3 },
+      by_channel: [{ channel: 'line', leads: 24, reached_sales: 11, closed: 5, lost: 2, avg_score: 38 }, { channel: 'mock', leads: 10, reached_sales: 4, closed: 1, lost: 1, avg_score: 31 }, { channel: 'web', leads: 6, reached_sales: 1, closed: 0, lost: 0, avg_score: 14 }],
+      by_campaign: [{ campaign_id: 3, campaign: 'เปิดตัวหูฟังไร้สาย Aria', leads: 26, reached_sales: 12, closed: 5, lost: 1, avg_score: 41 }, { campaign_id: 2, campaign: 'ลดล้างสต็อกมือถือมือสอง', leads: 11, reached_sales: 3, closed: 1, lost: 2, avg_score: 22 }, { campaign_id: null, campaign: '(ไม่ระบุแคมเปญ)', leads: 3, reached_sales: 1, closed: 0, lost: 0, avg_score: 12 }],
+      score_bands: [{ band: 'high', leads: 13, closed: 5, lost: 1 }, { band: 'mid', leads: 14, closed: 1, lost: 1 }, { band: 'low', leads: 13, closed: 0, lost: 1 }] })
+  }
   if (path.startsWith('/leads') || path.startsWith('/scoring') || path === '/event-keywords') {
     const role = 'admin'
     let mm

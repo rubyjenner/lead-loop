@@ -113,6 +113,8 @@ func main() {
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
 	registerDailyRoutes(app, pool)
+	registerInboxRoutes(app, pool)
+	registerReportRoutes(app, pool)
 	registerChannelRoutes(app, pool)
 	writers := requireRole("marketing", "admin") // sales and others are read-only
 
