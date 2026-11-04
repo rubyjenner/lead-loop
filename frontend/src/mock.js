@@ -67,6 +67,13 @@ const settings = { handoff_threshold: 50, level_warm_min: 25, score_min: 0, scor
 const KW = { asked_details: ['รายละเอียด', 'สนใจ'], asked_price: ['ราคา', 'เท่าไหร่'], requested_human: ['คุยกับเจ้าหน้าที่'], requested_callback: ['โทรกลับ', 'ติดต่อกลับ'], asked_installment: ['ผ่อน'], unsubscribed: ['เลิกรับ'] }
 const RULE_OF = { asked_details: 1, requested_human: 2, asked_price: 3, requested_callback: 4, asked_installment: 5 }
 const level = (sc) => (sc >= 50 ? 'hot' : sc >= 25 ? 'warm' : 'cold')
+
+let followups = [
+  { id: 1, lead_id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', level: 'warm', seq: 1, body: 'สวัสดีค่ะ ทางร้านยังเก็บสินค้าที่คุณสนใจไว้ให้ หากมีคำถามเรื่องราคาหรือการผ่อนชำระ ทักมาได้เลยค่ะ (พิมพ์ "หยุด" หากไม่ต้องการรับข้อความอีก)', status: 'pending_approval', created_at: ago(40), decided_by: null, decided_at: null, sent_at: null },
+  { id: 2, lead_id: 3, display_name: 'ลูกค้าทดสอบ 003', channel: 'line', level: 'cold', seq: 1, body: 'สวัสดีค่ะ ยังสนใจสินค้าอยู่ไหมคะ หากต้องการรายละเอียดหรือราคา พิมพ์ทักมาได้เลยค่ะ (พิมพ์ "หยุด" หากไม่ต้องการรับข้อความอีก)', status: 'pending_approval', created_at: ago(55), decided_by: null, decided_at: null, sent_at: null },
+  { id: 3, lead_id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', level: 'warm', seq: 0, body: 'สวัสดีค่ะ ขอติดตามอีกครั้ง หากสนใจนัดดูสินค้าหรืออยากให้เจ้าหน้าที่โทรกลับ แจ้งได้เลยค่ะ (พิมพ์ "หยุด" หากไม่ต้องการรับข้อความอีก)', status: 'sent', created_at: ago(60 * 70), decided_by: 'napat.m@vannessplus.com', decided_at: ago(60 * 69), sent_at: ago(60 * 69) },
+]
+let lastRun = { day: '2026-11-03', started_at: ago(60 * 10), finished_at: ago(60 * 10), triggered_by: 'schedule', summary: { day: '2026-11-03', checked: 5, no_reply_3d: 2, inactive_7d: 1, followups_created: 2, errors: 0 } }
 const ok = (json, status = 200) => ({ status, json })
 const err = (status, error, code) => ({ status, json: { error, code } })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -227,6 +234,25 @@ export async function mockRequest(method, path, body, token) {
         if (r.is_core) return err(400, 'core rules cannot be deleted')
         rules = rules.filter((x) => x.id !== r.id); return ok({ ok: true, soft_deleted: false })
       }
+    }
+  }
+
+  if (path.startsWith('/followups') || path.startsWith('/daily-jobs')) {
+    if (method === 'GET' && path === '/daily-jobs/last') return ok({ run: lastRun })
+    if (method === 'POST' && path === '/daily-jobs/run') {
+      const s = { day: '2026-11-03', checked: 5, no_reply_3d: 0, inactive_7d: 0, followups_created: 0, errors: 0 }
+      lastRun = { day: s.day, started_at: new Date().toISOString(), finished_at: new Date().toISOString(), triggered_by: 'manual:admin@example.com', summary: s }
+      return ok(s)
+    }
+    if (method === 'GET') return ok(followups)
+    const fm = path.match(/^\/followups\/(\d+)\/(approve|reject)$/)
+    if (fm && method === 'POST') {
+      const f = followups.find((x) => x.id === +fm[1])
+      if (!f || f.status !== 'pending_approval') return err(409, 'follow-up not found or not pending approval')
+      f.decided_by = 'admin@example.com'; f.decided_at = new Date().toISOString()
+      if (fm[2] === 'reject') { f.status = 'rejected'; return ok({ status: 'rejected' }) }
+      f.status = f.channel === 'mock' ? 'sent' : 'approved'; if (f.status === 'sent') f.sent_at = f.decided_at
+      return ok({ status: f.status })
     }
   }
   if (method === 'GET' && path.startsWith('/audit-log')) return ok(audit)

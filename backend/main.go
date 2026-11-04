@@ -112,6 +112,7 @@ func main() {
 	// Login is public; everything registered after this requires a valid token.
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
+	registerDailyRoutes(app, pool)
 	registerChannelRoutes(app, pool)
 	writers := requireRole("marketing", "admin") // sales and others are read-only
 
@@ -366,6 +367,7 @@ func main() {
 	queue := initQueue(ctx)
 	registerAIRoutes(app, pool, queue)
 	go runWorker(ctx, queue, upgradeHandler(pool), 15*time.Second, envInt("AI_RETRY_MAX", 5))
+	go runDailyScheduler(ctx, pool)
 
 	log.Fatal(app.Listen(":8080"))
 }

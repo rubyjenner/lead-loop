@@ -14,12 +14,14 @@ import Overview from './pages/Overview.jsx'
 import Leads from './pages/Leads.jsx'
 import LeadDetail from './pages/LeadDetail.jsx'
 import Scoring from './pages/Scoring.jsx'
+import Followups from './pages/Followups.jsx'
 
 const WORK = [
   ['/overview', 'ภาพรวม', true],
   ['/campaigns', 'แคมเปญ', true],
   ['/approvals', 'อนุมัติคอนเทนต์', true],
   ['/leads', 'ลีด', true],
+  ['/followups', 'ติดตามลีด', true],
   ['/scoring', 'กฎคะแนน', true],
 ]
 
@@ -86,6 +88,7 @@ export default function App() {
         <Route path="/leads" element={<Leads />} />
         <Route path="/leads/:id" element={<LeadDetail />} />
         <Route path="/scoring" element={<Scoring />} />
+        <Route path="/followups" element={<Followups />} />
         {WORK.filter((w) => !w[2]).map(([to, label]) => (
           <Route key={to} path={to} element={<Soon title={label} />} />
         ))}
