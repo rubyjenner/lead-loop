@@ -1,0 +1,26 @@
+# SITE_ADDRESS decides how Caddy listens:
+#   a domain name (leadloop.example.com)  -> automatic HTTPS (ports 80 and 443 must be reachable from the internet)
+#   :80                                   -> plain HTTP, for a local trial of the production setup only
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# The browser calls /api/..., the Go API sees the path without the /api prefix (same as the Vite dev proxy).
+	handle_path /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Everything else is the web app; unknown paths fall back to index.html so React Router can handle them.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

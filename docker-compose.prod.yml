@@ -1,0 +1,76 @@
+# Production-style setup: only the web container (Caddy) is reachable from outside.
+# Database, Redis and the API stay on the internal Docker network.
+#
+#   cp .env.production.example .env      (then fill in every value)
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# For a local trial without a domain, set SITE_ADDRESS=:80 and open http://localhost.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leadloop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-leadloop}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leadloop}"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-leadloop}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-leadloop}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ characters)}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      AI_PROVIDERS: ${AI_PROVIDERS:-claude,gemini}
+      AI_DAILY_QUOTA_PER_USER: ${AI_DAILY_QUOTA_PER_USER:-30}
+      AI_DAILY_TOKEN_CAP: ${AI_DAILY_TOKEN_CAP:-0}
+      AI_RETRY_MAX: ${AI_RETRY_MAX:-5}
+      DAILY_JOB_HOUR: ${DAILY_JOB_HOUR:-9}
+      DAILY_JOB_DISABLED: ${DAILY_JOB_DISABLED:-}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env (the public address, e.g. https://leadloop.example.com)}
+      # The API is reachable only through Caddy, so it is safe to trust the client address Caddy puts here.
+      PROXY_HEADER: X-Forwarded-For
+      # Same origin (web app and /api behind one domain), so CORS stays off.
+      CORS_ORIGINS: ""
+    expose: ["8080"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env (a domain name, or :80 for a local trial)}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

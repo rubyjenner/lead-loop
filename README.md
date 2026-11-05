@@ -44,6 +44,8 @@ nurture and score leads, hand qualified leads to sales, and feed results back in
 - หน้าเว็บที่เพิ่ม (3–4 พ.ย.): ภาพรวม, แคมเปญ (รายการ/สร้าง/รายละเอียด วางแผนและร่างคอนเทนต์ด้วย AI), ลีด + รายละเอียดลีด, กฎคะแนน (เพิ่ม/แก้/ลบ/ลองกฎ/คำนวณใหม่), ติดตามลีด (อนุมัติร่าง + ปุ่มรันงานรายวันสำหรับเดโม); `GET /campaigns/:id` เพิ่มใหม่ในหน้ารายละเอียดแคมเปญ
 - ทดสอบ: ย้อนเวลาลีดทดสอบในฐานข้อมูล แล้วกด "รันงานรายวันตอนนี้" ได้ เงียบ 3 วัน 1 / เงียบ 7 วัน 1 / ร่างใหม่ 1 และรันซ้ำแล้วเป็น 0 ทั้งหมด; ยังไม่ได้ทดสอบกรณีถอนความยินยอมระหว่างที่ร่างค้างอยู่ และยังไม่มี smoke test สคริปต์สำหรับงานรายวัน
 
+**ชุดเตรียม deploy** (5 พ.ย. 2569, ตรวจรูปแบบแล้ว **ยังไม่ได้ลองบนเซิร์ฟเวอร์จริง**): `docker-compose.prod.yml` (เปิดเฉพาะ Caddy 80/443, DB/Redis/API อยู่เครือข่ายภายใน), `frontend/Dockerfile` + `frontend/Caddyfile` (HTTPS อัตโนมัติ, หน้าเว็บและ `/api` โดเมนเดียวกัน), `.env.production.example`, `scripts/backup.sh` + `restore-test.sh` (และ `.ps1` สำหรับลองบน Windows), คู่มือ `docs/DEPLOY.md` และสรุป PDPA 1 หน้า `docs/PDPA_SUMMARY.md` (ร่างสำหรับ Deputy Manager)
+
 **ระบบบัญชี ช่องทางแชตจำลอง และหน้าเว็บ** (1–2 พ.ย. 2569)
 - ระบบบัญชี: admin เท่านั้นที่สร้างบัญชี; เชิญด้วยลิงก์ (ใช้ครั้งเดียว 72 ชม.) หรือรหัสผ่านชั่วคราว; ลืมรหัสผ่านใช้ลิงก์ (1 ชม.); เพิ่ม `name`, `auth_provider`, `last_login_at`; จำกัดโดเมนอีเมลแบบเลือกได้ (`ALLOWED_EMAIL_DOMAINS`); `GET /users/approver-check` เตือนเมื่อผู้อนุมัติน้อยกว่า 2 คน (รายละเอียดในหัวข้อ Login และสิทธิ์) · `smoke-test.ps1` ผ่าน 98/98
 - ช่องทางแชตจำลอง (mock): `POST /channels/mock/messages` และ `/channels/mock/consent` ยังไม่ยินยอมไม่เก็บอะไร ตอบจากข้อมูลสินค้าเท่านั้น (ผ่อน/จัดส่ง/ต่อรองส่งให้ทีมงาน) · `scripts/channels-smoke-test.ps1` ผ่าน 25/25 · เอกสาร `docs/CHANNELS_API.md`
@@ -326,6 +328,7 @@ Endpoints:
 - docs/DEMO_GUIDE.md: คู่มือเดโมและอัปเดตความคืบหน้า
 - docs/LEADS_API.md + postman/: เอกสารและชุดทดสอบ API ลีด
 - docker-compose.yml: PostgreSQL, Redis, API
+- docker-compose.prod.yml + frontend/Dockerfile + frontend/Caddyfile: ชุด deploy (Caddy HTTPS); scripts/backup.* และ restore-test.*: สำรอง/ทดสอบกู้ฐานข้อมูล; docs/DEPLOY.md, docs/PDPA_SUMMARY.md
 
 ## แนวปฏิบัติเมื่อใช้ AI ช่วยเขียนโค้ด
 
