@@ -255,3 +255,13 @@ textarea.code{font-family:ui-monospace,Consolas,monospace;font-size:13px;width:1
 .chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
 .chip:hover:not(:disabled){background:#e6f2f3}.chip:disabled{opacity:.5;cursor:default}
 .chat-input{display:flex;gap:8px}.chat-input input{flex:1;min-width:0}
+.pub{min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:16px;background:var(--bg,#eef2f3)}
+.pub-card{width:100%;max-width:480px;background:var(--paper,#fff);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.pub-head h1{margin:0;font-size:20px}.pub-head p{margin:2px 0 0}
+.pub-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.link-btn{background:none;border:0;color:var(--muted,#5a6b70);text-decoration:underline;font:inherit;font-size:13px;cursor:pointer;padding:4px 0}
+.pub .chat-log{min-height:260px;max-height:55vh}
+
+.shop-img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;background:#e3eaec}
+.shop-desc{margin:0;font-size:14px}
+.shop-post{white-space:pre-wrap;font-size:14px;background:#f4f7f8;border:1px solid var(--line);border-radius:10px;padding:10px 12px}

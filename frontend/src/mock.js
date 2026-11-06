@@ -89,6 +89,20 @@ export async function mockRequest(method, path, body, token) {
     if (body.token === 'expired') return err(400, 'link is invalid, expired or already used')
     return ok({ status: 'password set, you can log in now' })
   }
+  if (path.startsWith('/public/shop')) return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', description: 'แบตอึด 30 ชั่วโมง ตัดเสียงรบกวน', product_price: 2490, image_url: 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22480%22 height=%22240%22><rect width=%22480%22 height=%22240%22 fill=%22%23cfe3e6%22/><text x=%22240%22 y=%22130%22 font-size=%2228%22 text-anchor=%22middle%22 fill=%22%23275%22>รูปสินค้า (ตัวอย่าง)</text></svg>', posts: ['หูฟังไร้สาย Aria เปิดตัววันนี้ แบตอึด 30 ชั่วโมง ราคา 2,490 บาท ทักแชตสอบถามได้เลยค่ะ'] })
+  if (path.startsWith('/public/chat/')) {
+    if (method === 'GET') return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', product_price: 2490 })
+    const sid = body?.session_id; const key = 'pub-' + sid
+    if (path.endsWith('/consent')) {
+      if (!chatMap[key]) { const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้าเว็บ', channel: 'web', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }; leads.push(l); chatMap[key] = l.id }
+      return ok({ reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
+    }
+    if (path.endsWith('/withdraw')) { const l = leads.find((x) => x.id === chatMap[key]); if (l) { l.consent_general = false; l.consent_marketing = false; l.status = 'lost' } delete chatMap[key]; return ok({ ok: true, reply: 'ถอนความยินยอมแล้วค่ะ ระบบจะไม่ประมวลผลข้อมูลของคุณอีก' }) }
+    if (path.endsWith('/messages')) {
+      const r = mockRequest('POST', '/channels/mock/messages', { external_id: key, text: body.text }, true)
+      return r
+    }
+  }
   if (!token) return err(401, 'unauthorized')
   if (path === '/auth/me') return ok({ id: '1', email: 'admin@example.com', role: 'admin', name: 'อาทิตยา เสาเวียง' })
   if (method === 'POST' && path === '/auth/password') return ok({ token: 'mock-token', expires_in: 28800 })

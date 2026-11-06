@@ -110,6 +110,8 @@ func main() {
 	})
 
 	// Login is public; everything registered after this requires a valid token.
+	registerPublicChatRoutes(app, pool) // public, off unless PUBLIC_CHAT_ENABLED=1
+	registerShopRoutes(app, pool)
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
 	registerDailyRoutes(app, pool)
@@ -208,6 +210,7 @@ func main() {
 		if err != nil {
 			return serverError(c, err)
 		}
+		saveProductImage(c, pool, in.ID)
 		return c.Status(201).JSON(in)
 	})
 

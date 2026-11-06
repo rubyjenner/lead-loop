@@ -19,6 +19,7 @@ import Scoring from './pages/Scoring.jsx'
 import Followups from './pages/Followups.jsx'
 import ChatTest from './pages/ChatTest.jsx'
 import Reports from './pages/Reports.jsx'
+import PublicChat from './pages/PublicChat.jsx'
 
 const WORK = [
   ['/overview', 'ภาพรวม', true],
@@ -92,6 +93,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/set-password" element={<SetPassword />} />
+      <Route path="/chat" element={<PublicChat />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route element={<Shell />}>
         <Route path="/" element={<Home />} />

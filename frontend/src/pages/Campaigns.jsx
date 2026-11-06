@@ -114,7 +114,7 @@ function CampaignModal({ products, onClose, onCreated, onAddProduct }) {
 }
 
 function ProductModal({ onClose, onCreated }) {
-  const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '' })
+  const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '', image_url: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -124,6 +124,7 @@ function ProductModal({ onClose, onCreated }) {
     try {
       const body = { name: f.name.trim(), description: f.description.trim(), brand_info: f.brand_info.trim() }
       if (f.price !== '') body.price = Number(f.price)
+      if (f.image_url.trim()) body.image_url = f.image_url.trim()
       await api('POST', '/products', body)
       onCreated()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -136,6 +137,8 @@ function ProductModal({ onClose, onCreated }) {
         <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} />
           <small>ใส่เฉพาะข้อมูลจริง เช่น สภาพ ขนาด การรับประกัน คำตอบของแชตและคอนเทนต์ที่ AI เขียนจะอ้างจากข้อมูลนี้</small></label>
         <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
+        <label className="field"><span>ลิงก์รูปสินค้า (ถ้ามี)</span><input type="url" placeholder="https://…" value={f.image_url} onChange={set('image_url')} />
+          <small>ใช้ลิงก์รูปที่เป็นของร้านเอง รูปจะแสดงบนหน้าร้านสาธารณะ</small></label>
         <label className="field"><span>ข้อมูลแบรนด์ (ถ้ามี)</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
         <div className="modal-foot">
           <button type="button" className="btn btn-quiet" onClick={onClose}>ย้อนกลับ</button>
