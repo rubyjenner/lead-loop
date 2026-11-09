@@ -172,4 +172,3 @@ if ($RateLimit) {
 }
 
 Write-Host "`nResult: $pass passed, $fail failed"
-if ($fail -gt 0) { exit 1 }

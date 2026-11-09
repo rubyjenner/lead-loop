@@ -21,6 +21,8 @@ LINE ต้องการ URL แบบ HTTPS สาธารณะ
 - ชุด prod: `https://<โดเมน>/api/public/line/webhook`
 - ทดลองบนเครื่อง: เปิดอุโมงค์ไปพอร์ต 8080 (เช่น `cloudflared tunnel --url http://localhost:8080`) แล้วใช้ `https://<ชื่ออุโมงค์>/public/line/webhook`
 
+- ทดลองผ่าน ngrok ที่ชี้พอร์ต 5173 (หน้าเว็บ Vite): ใช้ `https://<โดเมน ngrok>/api/public/line/webhook` (มี `/api` นำหน้า เพราะ Vite ส่งต่อให้ API) ถ้าอุโมงค์ชี้พอร์ต 8080 ให้ใช้ `/public/line/webhook` ไม่มี `/api`
+
 ใส่ URL ที่ LINE Developers > Messaging API > Webhook URL กด **Verify** ต้องขึ้น Success แล้วเปิด **Use webhook**
 
 ## 4. ทดสอบ
