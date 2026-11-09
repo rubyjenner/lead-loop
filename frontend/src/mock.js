@@ -47,6 +47,8 @@ let campaigns = [
 
 let leadSeq = 20
 const chatMap = {}
+const staffReplies = [] // {id, key, lead_id, body, sent_by, created_at}
+let replySeq = 0
 const leads = [
   { id: 1, display_name: 'ลูกค้าทดสอบ 001', channel: 'mock', budget: 12900, status: 'qualified', score: 70, level: 'hot', consent_general: true, consent_marketing: true, created_at: ago(60 * 5), score_breakdown: [{ rule: 'ขอคุยกับเจ้าหน้าที่', points: 30 }, { rule: 'สอบถามราคา', points: 10 }, { rule: 'ทักขอรายละเอียด', points: 10 }, { rule: 'งบเพียงพอกับราคาสินค้า', points: 20 }] },
   { id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', budget: 9000, status: 'nurturing', score: 35, level: 'warm', consent_general: true, consent_marketing: true, created_at: ago(60 * 26), score_breakdown: [{ rule: 'สอบถามราคา', points: 10 }, { rule: 'ถามผ่อน', points: 15 }, { rule: 'ทักขอรายละเอียด', points: 10 }] },
@@ -90,6 +92,10 @@ export async function mockRequest(method, path, body, token) {
     return ok({ status: 'password set, you can log in now' })
   }
   if (path.startsWith('/public/shop')) return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', description: 'แบตอึด 30 ชั่วโมง ตัดเสียงรบกวน', product_price: 2490, image_url: 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22480%22 height=%22240%22><rect width=%22480%22 height=%22240%22 fill=%22%23cfe3e6%22/><text x=%22240%22 y=%22130%22 font-size=%2228%22 text-anchor=%22middle%22 fill=%22%23275%22>รูปสินค้า (ตัวอย่าง)</text></svg>', posts: ['หูฟังไร้สาย Aria เปิดตัววันนี้ แบตอึด 30 ชั่วโมง ราคา 2,490 บาท ทักแชตสอบถามได้เลยค่ะ'] })
+  if (path.startsWith('/public/chat/replies')) {
+    const sid = new URLSearchParams(path.split('?')[1]).get('session_id'); const after = Number(new URLSearchParams(path.split('?')[1]).get('after')) || 0
+    return ok({ replies: staffReplies.filter((r) => r.key === 'pub-' + sid && r.id > after) })
+  }
   if (path.startsWith('/public/chat/')) {
     if (method === 'GET') return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', product_price: 2490 })
     const sid = body?.session_id; const key = 'pub-' + sid
@@ -243,6 +249,17 @@ export async function mockRequest(method, path, body, token) {
       if (i < 0) return err(404, 'lead not found')
       if (method === 'GET') return ok(leads[i])
       if (method === 'DELETE') { leads.splice(i, 1); return ok({ ok: true }) }
+    }
+    mm = path.match(/^\/leads\/(\d+)\/(reply|replies)$/)
+    if (mm) {
+      const l = leads.find((x) => x.id === +mm[1]); if (!l) return err(404, 'lead not found')
+      if (method === 'GET') return ok(staffReplies.filter((r) => r.lead_id === l.id).sort((a, b) => b.id - a.id))
+      if (!l.consent_general) return err(409, 'ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้')
+      if (l.channel !== 'web') return err(409, 'ตอบได้เฉพาะลีดจากแชตหน้าเว็บ')
+      const key = Object.keys(chatMap).find((k) => chatMap[k] === l.id)
+      const r = { id: ++replySeq, key, lead_id: l.id, body: String(body?.body || '').trim(), sent_by: 'admin@example.com', created_at: new Date().toISOString() }
+      if (!r.body) return err(400, 'ข้อความต้องไม่ว่าง')
+      staffReplies.push(r); return ok(r, 201)
     }
     mm = path.match(/^\/leads\/(\d+)\/(message|status|consent)$/)
     if (mm && method === 'POST') {

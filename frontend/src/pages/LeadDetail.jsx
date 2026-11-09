@@ -14,11 +14,17 @@ export default function LeadDetail() {
   const [text, setText] = useState('')
   const [toast, setToast] = useState('')
   const [busy, setBusy] = useState(false)
+  const [replies, setReplies] = useState([])
+  const [replyText, setReplyText] = useState('')
 
   const load = useCallback(async () => {
     try { setLead(await api('GET', `/leads/${id}`)); setError('') } catch (e) { setError(e.message) }
   }, [id])
   useEffect(() => { load() }, [load])
+  const loadReplies = useCallback(async () => {
+    try { setReplies(await api('GET', `/leads/${id}/replies`)) } catch { /* the page still works without it */ }
+  }, [id])
+  useEffect(() => { loadReplies() }, [loadReplies])
 
   async function run(fn, ok) {
     setBusy(true); setError('')
@@ -28,6 +34,12 @@ export default function LeadDetail() {
     e.preventDefault()
     run(() => api('POST', `/leads/${id}/message`, { text }), (r) => (r.detected?.length ? `จับได้: ${r.detected.map(eventLabel).join(', ')}` : 'ไม่พบคำที่ตรงกับเหตุการณ์ใดเลย'))
     setText('')
+  }
+  const sendReply = (e) => {
+    e.preventDefault()
+    const body = replyText.trim()
+    if (!body) return
+    run(() => api('POST', `/leads/${id}/reply`, { body }), 'ส่งข้อความถึงลูกค้าแล้ว').then(() => { setReplyText(''); loadReplies() })
   }
   const setStatus = (status) => run(() => api('POST', `/leads/${id}/status`, { status }), 'อัปเดตสถานะแล้ว')
   const consent = (kind, action) => run(() => api('POST', `/leads/${id}/consent`, { kind, action, text_version: 'mock-v1' }), 'บันทึกความยินยอมแล้ว')
@@ -40,6 +52,7 @@ export default function LeadDetail() {
   if (!lead) return <div className="page muted pad">กำลังโหลด…</div>
   const canSales = user.role === 'sales' || user.role === 'admin'
   const consentOk = lead.consent_general
+  const canReply = lead.channel === 'web' && consentOk
   return (
     <div className="page">
       <Link className="crumb" to="/leads">← ลีดทั้งหมด</Link>
@@ -101,6 +114,24 @@ export default function LeadDetail() {
           )}
         </section>
       </div>
+      {lead.channel === 'web' && (
+        <section className="panel" style={{ marginTop: 16 }}>
+          <h2>ตอบลูกค้า</h2>
+          <p className="muted small">ข้อความจะไปแสดงในหน้าแชตของลูกค้าคนนี้ (ลูกค้ากำลังเปิดหน้าแชตอยู่ถึงจะเห็น) ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น</p>
+          {replies.length > 0 && (
+            <ul className="bd">
+              {replies.map((r) => <li key={r.id}><span>{r.body}</span><span className="muted small">{r.sent_by} · {new Date(r.created_at).toLocaleString('th-TH')}</span></li>)}
+            </ul>
+          )}
+          {canReply ? (
+            <form className="form" onSubmit={sendReply}>
+              <label className="field"><span>ข้อความถึงลูกค้า (ไม่เกิน 500 ตัวอักษร)</span>
+                <textarea rows={3} maxLength={500} value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="เช่น สวัสดีค่ะ ทางร้านยินดีให้ข้อมูลเพิ่มเติม สะดวกให้โทรกลับช่วงไหนคะ" /></label>
+              <button className="btn btn-primary" disabled={busy || !replyText.trim()}>ส่งถึงลูกค้า</button>
+            </form>
+          ) : <p className="muted small">ลูกค้าถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้</p>}
+        </section>
+      )}
       {user.role === 'admin' && <p style={{ marginTop: 18 }}><button className="btn btn-danger" onClick={anonymize}>ลบข้อมูลระบุตัวตนของลีดนี้</button></p>}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>

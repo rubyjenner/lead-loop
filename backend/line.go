@@ -1,0 +1,153 @@
+package main
+
+// LINE channel: customers message the LINE Official Account, LINE calls POST /public/line/webhook.
+// Wire it up in main.go next to registerPublicChatRoutes (before registerAuthRoutes):
+//
+//	registerLineRoutes(app, pool)
+//
+// It is OFF unless BOTH LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN are set. Safeguards:
+//   - every request must carry a valid X-Line-Signature (HMAC of the raw body with the channel secret)
+//   - only 1:1 chats are handled (groups and rooms are ignored) and the LINE user id must look like "U" + 32 hex
+//   - same PDPA rule as every channel: nothing is stored before the customer presses "ยินยอม"; the message
+//     text of an unknown person is never read, and their LINE profile is read only after they consent
+//   - the customer can withdraw at any time by pressing the button or typing the same words
+//   - the reply contains only the chat answer: never the score, level or lead id
+//
+// New LINE leads are attached to the campaign in LINE_CAMPAIGN_ID (optional; 0 or empty = no campaign).
+// A salesperson takes over in LINE Official Account Manager (chat mode) after the lead is handed off.
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	lineCreatedBy   = "line-chat"
+	lineMaxBodySize = 1 << 20
+)
+
+func lineSecret() string { return strings.TrimSpace(os.Getenv("LINE_CHANNEL_SECRET")) }
+func lineToken() string  { return strings.TrimSpace(os.Getenv("LINE_CHANNEL_ACCESS_TOKEN")) }
+func lineEnabled() bool  { return lineSecret() != "" && lineToken() != "" }
+
+func registerLineRoutes(app fiber.Router, pool *pgxpool.Pool) {
+	ch := &chatChannelAPI{leads: &leadAPI{pool: pool}}
+	limit := limiter.New(limiter.Config{Max: 300, Expiration: time.Minute,
+		LimitReached: func(c *fiber.Ctx) error { return c.SendStatus(429) }})
+
+	app.Post("/public/line/webhook", limit, func(c *fiber.Ctx) error {
+		if !lineEnabled() {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+		body := c.Body()
+		if len(body) > lineMaxBodySize {
+			return c.SendStatus(413)
+		}
+		if !lineSignatureValid(lineSecret(), body, c.Get("X-Line-Signature")) {
+			return c.SendStatus(401)
+		}
+		var wh lineWebhook
+		if err := json.Unmarshal(body, &wh); err != nil {
+			return c.SendStatus(400)
+		}
+		client := &lineClient{token: lineToken(), http: &http.Client{Timeout: 8 * time.Second}}
+		var campaign *int64
+		if id := int64(envInt("LINE_CAMPAIGN_ID", 0)); id > 0 {
+			campaign = &id
+		}
+		for _, ev := range wh.Events {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			if err := ch.handleLineEvent(ctx, client, campaign, ev); err != nil {
+				log.Printf("line event %q: %v", ev.Type, err) // log only: LINE must still get 200 or it retries
+			}
+			cancel()
+		}
+		return c.SendStatus(200) // an empty "events" list (the Verify button in LINE Developers) also lands here
+	})
+}
+
+func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClient, campaign *int64, ev lineEvent) error {
+	if ev.Source.Type != "user" || !lineUserIDRe.MatchString(ev.Source.UserID) {
+		return nil
+	}
+	ext := ev.Source.UserID
+
+	switch ev.Type {
+	case "follow": // the person just added the account: greet (consent notice if new)
+		res, err := ch.handleIncoming(ctx, lineChannel, ext, "")
+		if err != nil {
+			return err
+		}
+		return client.reply(ctx, ev.ReplyToken, lineReply(res))
+
+	case "message":
+		if ev.Message.Type != "text" {
+			return nil // stickers, images ...: ignored
+		}
+		text := lineTruncate(strings.TrimSpace(ev.Message.Text), chatMaxMessageText)
+		if text == "" {
+			return nil
+		}
+		if text == lineWithdrawCmd {
+			if err := ch.withdrawConsent(ctx, lineChannel, ext); err != nil {
+				return err
+			}
+			return client.reply(ctx, ev.ReplyToken, linePlain("ถอนความยินยอมแล้วค่ะ ระบบจะไม่ประมวลผลข้อมูลของคุณอีก หากต้องการคุยต่อ พิมพ์ข้อความมาได้เลย"))
+		}
+		res, err := ch.handleIncoming(ctx, lineChannel, ext, text)
+		if err != nil {
+			return err
+		}
+		return client.reply(ctx, ev.ReplyToken, lineReply(res))
+
+	case "postback":
+		switch linePostbackAction(ev.Postback.Data) {
+		case "consent":
+			name := cleanDisplayName(client.displayName(ctx, ext)) // read only now that the person accepted
+			if name == "" {
+				name = "ลูกค้า LINE"
+			}
+			if _, _, err := ch.grantConsent(ctx, lineChannel, ext, name, campaign, false, chatConsentVersion(), lineCreatedBy); err != nil {
+				return err
+			}
+			return client.reply(ctx, ev.ReplyToken, lineText("ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย หรือพิมพ์ \"เจ้าหน้าที่\" หากต้องการคุยกับทีมงาน"))
+		case "decline":
+			return client.reply(ctx, ev.ReplyToken, linePlain("ไม่เป็นไรค่ะ ยังไม่มีการเก็บข้อมูลของคุณ หากเปลี่ยนใจ พิมพ์ข้อความมาได้ทุกเมื่อ"))
+		}
+	}
+	return nil
+}
+
+func lineReply(res chatIncomingResult) lineMessage {
+	if res.NeedsConsent {
+		return lineConsentMessage(res.Reply)
+	}
+	return lineText(res.Reply)
+}
+
+// withdrawConsent is the PDPA withdrawal used by LINE (same effect as POST /public/chat/withdraw).
+func (ch *chatChannelAPI) withdrawConsent(ctx context.Context, channel, extID string) error {
+	id, found, err := ch.findLead(ctx, channel, extID)
+	if err != nil || !found {
+		return err
+	}
+	tag, err := ch.leads.pool.Exec(ctx, `UPDATE leads SET consent_general=FALSE, consent_marketing=FALSE,
+		consent_withdrawn_at=now(), updated_at=now() WHERE id=$1 AND consent_general AND consent_withdrawn_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() > 0 {
+		_, err = ch.leads.pool.Exec(ctx, `INSERT INTO consent_events(lead_id, kind, action, text_version) VALUES($1,'general','withdrawn',$2)`,
+			id, chatConsentVersion())
+	}
+	return err
+}

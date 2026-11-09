@@ -619,6 +619,9 @@ func (a *leadAPI) anonymizeLead(c *fiber.Ctx) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM lead_events WHERE lead_id=$1`, id); err != nil {
 		return serverError(c, err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM staff_replies WHERE lead_id=$1`, id); err != nil {
+		return serverError(c, err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return serverError(c, err)
 	}

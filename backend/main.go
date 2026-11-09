@@ -112,8 +112,10 @@ func main() {
 	// Login is public; everything registered after this requires a valid token.
 	registerPublicChatRoutes(app, pool) // public, off unless PUBLIC_CHAT_ENABLED=1
 	registerShopRoutes(app, pool)
+	registerStaffReplyPublic(app, pool) // public poll for staff replies, off unless PUBLIC_CHAT_ENABLED=1
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
+	registerStaffReplyRoutes(app, pool)
 	registerDailyRoutes(app, pool)
 	registerInboxRoutes(app, pool)
 	registerReportRoutes(app, pool)
