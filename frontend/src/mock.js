@@ -255,7 +255,7 @@ export async function mockRequest(method, path, body, token) {
       const l = leads.find((x) => x.id === +mm[1]); if (!l) return err(404, 'lead not found')
       if (method === 'GET') return ok(staffReplies.filter((r) => r.lead_id === l.id).sort((a, b) => b.id - a.id))
       if (!l.consent_general) return err(409, 'ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้')
-      if (l.channel !== 'web') return err(409, 'ตอบได้เฉพาะลีดจากแชตหน้าเว็บ')
+      if (l.channel !== 'web' && l.channel !== 'line') return err(409, 'ตอบได้เฉพาะลีดจากแชตหน้าเว็บหรือ LINE')
       const key = Object.keys(chatMap).find((k) => chatMap[k] === l.id)
       const r = { id: ++replySeq, key, lead_id: l.id, body: String(body?.body || '').trim(), sent_by: 'admin@example.com', created_at: new Date().toISOString() }
       if (!r.body) return err(400, 'ข้อความต้องไม่ว่าง')

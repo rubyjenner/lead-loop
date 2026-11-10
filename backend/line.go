@@ -14,7 +14,8 @@ package main
 //   - the reply contains only the chat answer: never the score, level or lead id
 //
 // New LINE leads are attached to the campaign in LINE_CAMPAIGN_ID (optional; 0 or empty = no campaign).
-// A salesperson takes over in LINE Official Account Manager (chat mode) after the lead is handed off.
+// A salesperson answers from the lead page (POST /leads/:id/reply pushes the text to the customer's LINE).
+// After a salesperson takes the lead or writes to the customer, the bot stops answering that customer.
 
 import (
 	"context"
@@ -107,6 +108,10 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 		if err != nil {
 			return err
 		}
+		// once a person is handling the lead the bot stays quiet (the message is still scored above)
+		if !res.NeedsConsent && res.LeadID > 0 && ch.botSilent(ctx, res.LeadID) {
+			return nil
+		}
 		return client.reply(ctx, ev.ReplyToken, lineReply(res))
 
 	case "postback":
@@ -125,6 +130,19 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 		}
 	}
 	return nil
+}
+
+// botSilent is true when a salesperson has taken over the lead (status handed_off) or has already written to the
+// customer. Withdrawing consent always still works because it is handled before this check.
+func (ch *chatChannelAPI) botSilent(ctx context.Context, leadID int64) bool {
+	var silent bool
+	err := ch.leads.pool.QueryRow(ctx, `SELECT (SELECT status FROM leads WHERE id=$1) = 'handed_off'
+		OR EXISTS (SELECT 1 FROM staff_replies WHERE lead_id=$1)`, leadID).Scan(&silent)
+	if err != nil {
+		log.Printf("line botSilent lead %d: %v", leadID, err)
+		return false // on error keep answering rather than leaving the customer without a reply
+	}
+	return silent
 }
 
 func lineReply(res chatIncomingResult) lineMessage {

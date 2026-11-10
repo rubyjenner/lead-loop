@@ -163,6 +163,23 @@ func (c *lineClient) reply(ctx context.Context, replyToken string, msgs ...lineM
 	return err
 }
 
+// linePushURL is a variable only so a test can point it at a local server.
+var linePushURL = "https://api.line.me/v2/bot/message/push"
+
+// push sends a message to one person without a reply token (used when a salesperson answers from the lead page).
+// The caller must already have checked that the person has consented and has not withdrawn.
+// LINE counts push messages against the account's monthly quota.
+func (c *lineClient) push(ctx context.Context, userID string, msgs ...lineMessage) error {
+	if !lineUserIDRe.MatchString(userID) {
+		return errors.New("invalid LINE user id")
+	}
+	if len(msgs) == 0 {
+		return errors.New("no message")
+	}
+	_, err := c.do(ctx, http.MethodPost, linePushURL, map[string]any{"to": userID, "messages": msgs})
+	return err
+}
+
 // displayName returns the person's LINE display name, or "" if it cannot be read.
 // Call it only AFTER the person has accepted the consent notice.
 func (c *lineClient) displayName(ctx context.Context, userID string) string {

@@ -7,13 +7,17 @@ package main
 //	registerStaffReplyRoutes(app, pool)  // after registerLeadRoutes (needs login)
 //
 // Rules:
-//   - only for leads of the "web" channel (the public chat) that are consented, not withdrawn, not anonymized
+//   - only for leads of the "web" channel (the public chat) and the "line" channel that are consented, not withdrawn,
+//     not anonymized. On LINE the text is pushed to the customer's LINE (the customer's own chat shows it); on the
+//     web the customer page polls for it
 //   - the text is written by staff, kept in staff_replies, and deleted when the lead is anonymized
 //   - the customer page only gets the replies of its own session (session id -> lead), never anything else
 //   - every reply is written to the audit log (who, which lead; not the text)
 
 import (
 	"context"
+	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -64,17 +68,32 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 			return leadErr(c, 400, "ข้อความต้องไม่ว่าง และยาวไม่เกิน 500 ตัวอักษร")
 		}
 		var channel string
+		var extID *string
 		var ok bool
-		err = pool.QueryRow(c.Context(), `SELECT channel,
-			(consent_general AND consent_withdrawn_at IS NULL AND anonymized_at IS NULL) FROM leads WHERE id=$1`, id).Scan(&channel, &ok)
+		err = pool.QueryRow(c.Context(), `SELECT channel, channel_user_id,
+			(consent_general AND consent_withdrawn_at IS NULL AND anonymized_at IS NULL) FROM leads WHERE id=$1`, id).Scan(&channel, &extID, &ok)
 		if err != nil {
 			return leadErr(c, 404, "lead not found")
 		}
-		if channel != publicChatChannel {
-			return leadErr(c, 409, "ตอบได้เฉพาะลีดจากแชตหน้าเว็บ")
+		if channel != publicChatChannel && channel != lineChannel {
+			return leadErr(c, 409, "ตอบได้เฉพาะลีดจากแชตหน้าเว็บหรือ LINE")
 		}
 		if !ok {
 			return leadErr(c, 409, "ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้")
+		}
+		if channel == lineChannel {
+			// LINE: send first, store only if LINE accepted it, so the history never shows a message the customer did not get
+			if !lineEnabled() {
+				return leadErr(c, 503, "ยังไม่ได้ตั้งค่า LINE ในระบบ")
+			}
+			if extID == nil || !lineUserIDRe.MatchString(*extID) {
+				return leadErr(c, 409, "ลีดนี้ไม่มีรหัสผู้ใช้ LINE ที่ใช้ส่งได้")
+			}
+			client := &lineClient{token: lineToken(), http: &http.Client{Timeout: 8 * time.Second}}
+			if err := client.push(c.Context(), *extID, lineText(body)); err != nil {
+				log.Printf("line push for lead %d: %v", id, err) // details stay in the log, not in the response
+				return leadErr(c, 502, "ส่งไปที่ LINE ไม่สำเร็จ (ลูกค้าอาจบล็อกบัญชี หรือโควตาข้อความเต็ม) ลองอีกครั้งหรือติดต่อนอกระบบ")
+			}
 		}
 		email := ""
 		if u := currentUser(c); u != nil {

@@ -52,7 +52,7 @@ export default function LeadDetail() {
   if (!lead) return <div className="page muted pad">กำลังโหลด…</div>
   const canSales = user.role === 'sales' || user.role === 'admin'
   const consentOk = lead.consent_general
-  const canReply = lead.channel === 'web' && consentOk
+  const canReply = (lead.channel === 'web' || lead.channel === 'line') && consentOk
   return (
     <div className="page">
       <Link className="crumb" to="/leads">← ลีดทั้งหมด</Link>
@@ -114,10 +114,12 @@ export default function LeadDetail() {
           )}
         </section>
       </div>
-      {lead.channel === 'web' && (
+      {(lead.channel === 'web' || lead.channel === 'line') && (
         <section className="panel" style={{ marginTop: 16 }}>
           <h2>ตอบลูกค้า</h2>
-          <p className="muted small">ข้อความจะไปแสดงในหน้าแชตของลูกค้าคนนี้ (ลูกค้ากำลังเปิดหน้าแชตอยู่ถึงจะเห็น) ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น</p>
+          <p className="muted small">{lead.channel === 'line'
+            ? 'ข้อความจะถูกส่งเข้า LINE ของลูกค้าคนนี้ทันที (นับเป็นโควตาข้อความของบัญชี LINE) หลังตอบแล้วบอตจะหยุดตอบลูกค้าคนนี้ ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น'
+            : 'ข้อความจะไปแสดงในหน้าแชตของลูกค้าคนนี้ (ลูกค้ากำลังเปิดหน้าแชตอยู่ถึงจะเห็น) ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น'}</p>
           {replies.length > 0 && (
             <ul className="bd">
               {replies.map((r) => <li key={r.id}><span>{r.body}</span><span className="muted small">{r.sent_by} · {new Date(r.created_at).toLocaleString('th-TH')}</span></li>)}

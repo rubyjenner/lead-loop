@@ -142,3 +142,43 @@ func TestLineClient(t *testing.T) {
 		t.Error("invalid user id must not reach the network")
 	}
 }
+
+func TestLinePush(t *testing.T) {
+	var gotAuth, gotPath string
+	var gotBody map[string]any
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		if gotBody["to"] == "U"+strings.Repeat("bb", 16) {
+			http.Error(w, `{"message":"blocked"}`, 400)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := &lineClient{token: "tok", http: &http.Client{Transport: rewriteTransport{srv.URL}}}
+	ctx := context.Background()
+	id := "U" + strings.Repeat("aa", 16)
+
+	if err := c.push(ctx, id, lineText("สวัสดีค่ะ")); err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer tok" || gotPath != "/v2/bot/message/push" || gotBody["to"] != id {
+		t.Errorf("push request: %s %s %v", gotAuth, gotPath, gotBody)
+	}
+	if msgs, _ := gotBody["messages"].([]any); len(msgs) != 1 {
+		t.Errorf("messages: %v", gotBody["messages"])
+	}
+	if err := c.push(ctx, "U"+strings.Repeat("bb", 16), lineText("x")); err == nil {
+		t.Error("a 400 from LINE (for example a blocked account) must be an error")
+	}
+	before := calls
+	if err := c.push(ctx, "../../etc", lineText("x")); err == nil || calls != before {
+		t.Error("invalid user id must be refused before the network")
+	}
+	if err := c.push(ctx, id); err == nil || calls != before {
+		t.Error("no message must be refused before the network")
+	}
+}

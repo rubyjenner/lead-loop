@@ -6,7 +6,7 @@
 1. สร้าง LINE Official Account ที่ https://manager.line.biz
 2. ใน Official Account Manager: Settings > Messaging API > Enable Messaging API (เลือก Provider)
 3. ที่ https://developers.line.biz เปิดช่องทางที่ได้ แท็บ Basic settings คัดลอก **Channel secret** แท็บ Messaging API กด Issue **Channel access token (long-lived)**
-4. Official Account Manager > Response settings: เปิด **Chat** และ **Webhooks**, ปิด **Auto-response messages** และ **Greeting message** (ให้ระบบตอบเอง) เซลส์รับช่วงต่อโดยตอบในแชตของ Official Account Manager
+4. Official Account Manager > Response settings: เปิด **Chat** และ **Webhooks**, ปิด **Auto-response messages** และ **Greeting message** (ให้ระบบตอบเอง) เซลส์ตอบลูกค้าจากหน้าลีดใน LeadLoop ได้ (ระบบส่งข้อความเข้า LINE ของลูกค้าให้)
 
 ## 2. ตั้งค่าในระบบ
 ใส่ใน `.env` (ห้าม commit) แล้ว `docker compose up -d --force-recreate api`
@@ -31,5 +31,6 @@ LINE ต้องการ URL แบบ HTTPS สาธารณะ
 
 ## ข้อจำกัดตอนนี้
 - ตอบเฉพาะแชต 1:1 และข้อความตัวอักษร (กลุ่มและสติกเกอร์ถูกข้าม)
-- ไม่ส่งข้อความหาลูกค้าก่อน (push) และเซลส์ยังตอบจากหน้าเว็บ LeadLoop ไม่ได้ ต้องตอบใน LINE Official Account Manager
-- บอทยังตอบข้อความต่อไปหลังส่งต่อเซลส์ ถ้าไม่ต้องการให้ตั้งวิธีหยุดบอทเป็นงานถัดไป
+- เซลส์ตอบจากหน้าลีด (กล่อง "ตอบลูกค้า") ระบบส่งเป็น push message เฉพาะลีดที่ยังยินยอมอยู่ ข้อความ push นับเป็นโควตาข้อความรายเดือนของบัญชี LINE ถ้าส่งไม่สำเร็จ (เช่น ลูกค้าบล็อกบัญชี หรือโควตาเต็ม) หน้าเว็บจะแจ้งและไม่บันทึกข้อความนั้น
+- ระบบไม่ส่งข้อความหาลูกค้าที่ไม่ได้ยินยอมหรือถอนแล้ว
+- บอทหยุดตอบลูกค้าคนนั้นเมื่อเซลส์รับลีด (สถานะ ส่งต่อแล้ว) หรือเมื่อเซลส์ตอบลูกค้าไปแล้ว ข้อความของลูกค้ายังถูกจับเหตุการณ์และให้คะแนนต่อ และลูกค้าพิมพ์ "ถอนความยินยอม" ได้เสมอ

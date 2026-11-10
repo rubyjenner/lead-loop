@@ -2,7 +2,7 @@
  LINE webhook smoke test: runs WITHOUT LINE and without a tunnel. It signs fake webhook events with your
  channel secret and posts them to your local API. FICTITIOUS DATA ONLY (fake LINE user ids).
  Replies cannot be delivered (fake reply tokens), so the API log will show "LINE API ... returned 400/401"
- lines. That is expected here. What is checked: signature, consent gate, lead creation, scoring, hand-off, withdraw.
+ lines. That is expected here. What is checked: signature, consent gate, lead creation, scoring, hand-off, sales reply (push refused by LINE), withdraw.
 
  Needs LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN set in .env (any non-empty test token is fine) and
  `docker compose up -d --force-recreate api`.
@@ -110,10 +110,18 @@ $d2 = Call 'GET' "/leads/$lid" $tok $null
 Check 'asking for a person -> Hot, handed off' ("$($d2.Json.level)" -match '(?i)hot' -and $d2.Json.score -gt $d1.Json.score)
 Write-Host ("      score {0} -> {1}, level {2}, status {3}" -f $d1.Json.score, $d2.Json.score, $d2.Json.level, $d2.Json.status)
 
+Write-Host "`n== Sales reply on LINE =="
+# the fake LINE user id does not exist, so LINE refuses the push: the API must answer 502 and store nothing
+$r1 = Call 'POST' "/leads/$lid/reply" $tok @{ body = 'ทดสอบ: เจ้าหน้าที่ตอบกลับ' }
+Check 'reply on a LINE lead is attempted (fake user id -> LINE refuses -> 502)' ($r1.Status -eq 502)
+Check 'a failed LINE push stores no reply' (@((Call 'GET' "/leads/$lid/replies" $tok $null).Json).Count -eq 0)
+Check 'empty reply -> 400' ((Call 'POST' "/leads/$lid/reply" $tok @{ body = '   ' }).Status -eq 400)
+
 Write-Host "`n== Withdraw =="
 [void](Webhook (Msg $uid 'ถอนความยินยอม') $secret $false)
 $d3 = Call 'GET' "/leads/$lid" $tok $null
 Check 'withdraw by typing the words' ($d3.Json.consent_general -eq $false)
+Check 'reply after withdrawal -> 409' ((Call 'POST' "/leads/$lid/reply" $tok @{ body = 'x' }).Status -eq 409)
 $score3 = $d3.Json.score
 [void](Webhook (Msg $uid 'ราคาเท่าไหร่ครับ') $secret $false)
 $d4 = Call 'GET' "/leads/$lid" $tok $null
