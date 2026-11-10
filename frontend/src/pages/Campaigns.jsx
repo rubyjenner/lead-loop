@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { CAMPAIGN_STATUS, Modal, Toast, baht, timeAgo } from '../ui.jsx'
-import ImagePicker from './ImagePicker.jsx'
 
 export default function Campaigns() {
   const { user } = useAuth()
@@ -11,7 +10,7 @@ export default function Campaigns() {
   const [products, setProducts] = useState([])
   const [editing, setEditing] = useState(null) // product whose facts are being edited
   const [error, setError] = useState('')
-  const [modal, setModal] = useState(null) // 'campaign' | 'product'
+  const [modal, setModal] = useState(null) // 'campaign'
   const [toast, setToast] = useState('')
   const canEdit = user.role === 'admin' || user.role === 'marketing'
 
@@ -30,7 +29,7 @@ export default function Campaigns() {
       <header className="page-head">
         <div>
           <h1>แคมเปญ</h1>
-          <p className="muted">เริ่มจากเลือกสินค้า ตั้งเป้าหมายและงบ แล้วให้ AI วางแผนและร่างคอนเทนต์ คอนเทนต์ต้องผ่านการอนุมัติก่อนใช้</p>
+          <p className="muted">ตั้งเป้าหมายและงบ ใส่ข้อมูลและรูปสินค้า แล้วให้ AI วางแผนและร่างคอนเทนต์ คอนเทนต์ต้องผ่านการอนุมัติก่อนใช้</p>
         </div>
         {canEdit && <button className="btn btn-primary" onClick={() => setModal('campaign')}>สร้างแคมเปญ</button>}
       </header>
@@ -39,7 +38,7 @@ export default function Campaigns() {
       {list && list.length === 0 && (
         <div className="empty">
           <p className="empty-title">ยังไม่มีแคมเปญ</p>
-          <p className="muted">{canEdit ? 'กด "สร้างแคมเปญ" เพื่อเริ่ม ถ้ายังไม่มีสินค้า ให้เพิ่มสินค้าในหน้าต่างสร้างแคมเปญก่อน' : 'เมื่อทีมการตลาดสร้างแคมเปญ จะแสดงที่นี่'}</p>
+          <p className="muted">{canEdit ? 'กด "สร้างแคมเปญ" เพื่อเริ่ม กรอกข้อมูลและรูปสินค้าได้ในหน้าต่างเดียวกัน' : 'เมื่อทีมการตลาดสร้างแคมเปญ จะแสดงที่นี่'}</p>
         </div>
       )}
       {list && list.length > 0 && (
@@ -87,30 +86,46 @@ export default function Campaigns() {
       )}
       {editing && <FactsModal product={editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); setToast('บันทึกข้อมูลสินค้าแล้ว') }} />}
       {modal === 'campaign' && (
-        <CampaignModal products={products} onClose={() => setModal(null)} onAddProduct={() => setModal('product')}
+        <CampaignModal products={products} onClose={() => setModal(null)}
           onCreated={() => { setModal(null); load() }} />
-      )}
-      {modal === 'product' && (
-        <ProductModal onClose={() => setModal('campaign')} onCreated={async () => { await load(); setToast('เพิ่มสินค้าแล้ว'); setModal('campaign') }} />
       )}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>
   )
 }
 
-function CampaignModal({ products, onClose, onCreated, onAddProduct }) {
+function CampaignModal({ products, onClose, onCreated }) {
   const nav = useNavigate()
-  const [f, setF] = useState({ name: '', product_id: products[0]?.id || '', goal: '', target_audience: '', budget: '' })
+  const [f, setF] = useState({ name: '', product_id: 'new', goal: '', target_audience: '', budget: '' })
+  const [p, setP] = useState({ name: '', description: '', price: '', brand_info: '', variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '' })
+  const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const pid = useRef(null) // product created by an earlier try of this form, so a retry never makes a duplicate
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  const setProd = (k) => (e) => setP({ ...p, [k]: e.target.value })
+  const isNew = f.product_id === 'new'
+  const anyProduct = isNew && (p.name.trim() || file || p.description.trim() || p.price !== '' || p.brand_info.trim() || FACT_FIELDS.some(([k]) => p[k].trim()))
 
   async function submit(e) {
     e.preventDefault()
-    setError(''); setBusy(true)
+    setError('')
+    if (anyProduct && !p.name.trim()) { setError('กรอกชื่อสินค้า หรือเว้นข้อมูลสินค้าทั้งหมดให้ว่าง'); return }
+    setBusy(true)
     try {
+      let productId = null
+      if (isNew && p.name.trim()) {
+        if (!pid.current) {
+          const body = { name: p.name.trim(), description: p.description.trim(), brand_info: p.brand_info.trim() }
+          if (p.price !== '') body.price = Number(p.price)
+          pid.current = (await api('POST', '/products', body)).id
+        }
+        productId = pid.current
+        if (file) await api('POST', `/products/${productId}/image`, { data_url: await readAsDataURL(file) })
+        if (FACT_FIELDS.some(([k]) => p[k].trim())) await api('PUT', `/product-facts/${productId}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, p[k]])))
+      } else if (!isNew && f.product_id) productId = Number(f.product_id)
       const body = { name: f.name.trim(), goal: f.goal.trim(), target_audience: f.target_audience.trim(), budget: Number(f.budget) || 0 }
-      if (f.product_id) body.product_id = Number(f.product_id)
+      if (productId) body.product_id = productId
       const c = await api('POST', '/campaigns', body)
       onCreated()
       nav(`/campaigns/${c.id}`)
@@ -121,16 +136,24 @@ function CampaignModal({ products, onClose, onCreated, onAddProduct }) {
       <form className="form" onSubmit={submit} noValidate>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
         <label className="field"><span>ชื่อแคมเปญ</span><input value={f.name} onChange={set('name')} placeholder="เช่น ลดล้างสต็อกมือถือมือสอง" autoFocus /></label>
-        <label className="field"><span>สินค้า</span>
-          <select value={f.product_id} onChange={set('product_id')}>
-            <option value="">ไม่ผูกสินค้า</option>
-            {products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` (${baht(p.price)})` : ''}</option>)}
-          </select>
-          <small>AI จะเขียนจากข้อมูลสินค้านี้เท่านั้น ไม่แต่งข้อมูลเพิ่ม <button type="button" className="linkbtn" onClick={onAddProduct}>เพิ่มสินค้าใหม่</button></small>
-        </label>
         <label className="field"><span>เป้าหมาย</span><input value={f.goal} onChange={set('goal')} placeholder="เช่น ได้ลีด 50 คนภายในเดือนนี้" /></label>
         <label className="field"><span>กลุ่มเป้าหมาย</span><input value={f.target_audience} onChange={set('target_audience')} placeholder="เช่น นักศึกษาและคนทำงานรุ่นใหม่" /></label>
         <label className="field"><span>งบประมาณ (บาท)</span><input type="number" min="0" value={f.budget} onChange={set('budget')} /></label>
+        {products.length > 0 && (
+          <label className="field"><span>สินค้า</span>
+            <select value={f.product_id} onChange={set('product_id')}>
+              <option value="new">สินค้าใหม่ (กรอกข้อมูลด้านล่าง)</option>
+              {products.map((x) => <option key={x.id} value={x.id}>ใช้สินค้าเดิม: {x.name}{x.price != null ? ` (${baht(x.price)})` : ''}</option>)}
+            </select>
+          </label>
+        )}
+        {isNew && (
+          <>
+            <h3 style={{ margin: '10px 0 2px' }}>ข้อมูลสินค้าของแคมเปญนี้</h3>
+            <p className="muted small">AI จะเขียนจากข้อมูลนี้เท่านั้น ไม่แต่งข้อมูลเพิ่ม เว้นว่างทั้งหมดได้ถ้ายังไม่ผูกสินค้า</p>
+            <ProductFields f={p} set={setProd} setFile={setFile} setError={setError} />
+          </>
+        )}
         <div className="modal-foot">
           <button type="button" className="btn btn-quiet" onClick={onClose}>ยกเลิก</button>
           <button className="btn btn-primary" disabled={busy || !f.name.trim()}>{busy ? 'กำลังสร้าง…' : 'สร้างแคมเปญ'}</button>
@@ -162,7 +185,7 @@ function FactsModal({ product, onClose, onSaved }) {
     ...Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])),
     name: product.name || '', description: product.description || '', price: product.price ?? '', brand_info: product.brand_info || '',
   }))
-  const [shot, setShot] = useState('') // a new picture, shrunk by the browser (data URL)
+  const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -172,10 +195,7 @@ function FactsModal({ product, onClose, onSaved }) {
     try {
       await api('PUT', `/products/${product.id}`, { name: f.name.trim(), description: f.description.trim(), price: f.price === '' ? null : Number(f.price), brand_info: f.brand_info.trim() })
       await api('PUT', `/product-facts/${product.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]])))
-      if (shot) {
-        try { await api('POST', `/products/${product.id}/image`, { data_url: shot }) }
-        catch (err2) { setError(`บันทึกข้อมูลแล้ว แต่เปลี่ยนรูปไม่สำเร็จ: ${err2.message}`); return }
-      }
+      if (file) await api('POST', `/products/${product.id}/image`, { data_url: await readAsDataURL(file) })
       onSaved()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -186,9 +206,13 @@ function FactsModal({ product, onClose, onSaved }) {
         <label className="field"><span>ชื่อสินค้า</span><input value={f.name} onChange={set('name')} /></label>
         <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} /></label>
         <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
-        <label className="field"><span>ข้อมูลแบรนด์</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
-        {product.image_url && !shot && <div className="img-row"><img src={product.image_url} alt={`รูปปัจจุบันของ ${product.name}`} referrerPolicy="no-referrer" /><span className="muted small">รูปปัจจุบัน</span></div>}
-        <ImagePicker label="เปลี่ยนรูปสินค้า (ไม่บังคับ)" value={shot} onChange={setShot} hint="รูปใหม่จะแทนรูปเดิมทันทีที่กดบันทึก และจะถูกส่งให้ AI ตอนสั่งวางแผนหรือร่างคอนเทนต์" />
+        <label className="field"><span>ข้อมูลแบรนด์ (ถ้ามี)</span><textarea rows="2" value={f.brand_info} onChange={set('brand_info')} /></label>
+        <label className="field"><span>เปลี่ยนรูปสินค้า (png, jpeg, webp ไม่เกิน 2 MB เว้นว่างถ้าใช้รูปเดิม)</span>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+            const x = e.target.files?.[0] || null
+            if (x && x.size > 2 * 1024 * 1024) { setError('รูปใหญ่เกิน 2 MB'); e.target.value = ''; setFile(null); return }
+            setError(''); setFile(x)
+          }} /></label>
         <p className="muted small">ใส่เฉพาะข้อมูลจริง บอตจะตอบลูกค้าตามข้อความด้านล่างตรง ๆ ช่องที่เว้นว่างบอตจะส่งต่อให้เจ้าหน้าที่ตอบ</p>
         <FactsFields f={f} set={set} />
         <div className="modal-foot">
@@ -200,51 +224,32 @@ function FactsModal({ product, onClose, onSaved }) {
   )
 }
 
-function ProductModal({ onClose, onCreated }) {
-  const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '', image_url: '', variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '' })
-  const [shot, setShot] = useState('') // picture already shrunk by the browser (data URL)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
-  async function submit(e) {
-    e.preventDefault()
-    setError(''); setBusy(true)
-    try {
-      const body = { name: f.name.trim(), description: f.description.trim(), brand_info: f.brand_info.trim() }
-      if (f.price !== '') body.price = Number(f.price)
-      if (f.image_url.trim() && !shot) body.image_url = f.image_url.trim()
-      const created = await api('POST', '/products', body)
-      if (shot && created?.id) {
-        try { await api('POST', `/products/${created.id}/image`, { data_url: shot }) }
-        catch (err2) { setError(`เพิ่มสินค้าแล้ว แต่อัปโหลดรูปไม่สำเร็จ: ${err2.message}`); return }
-      }
-      if (created?.id && FACT_FIELDS.some(([k]) => f[k].trim())) {
-        try { await api('PUT', `/product-facts/${created.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]]))) }
-        catch (err3) { setError(`เพิ่มสินค้าแล้ว แต่บันทึกข้อมูลสินค้าไม่สำเร็จ: ${err3.message} (แก้ภายหลังได้ที่ปุ่ม "แก้ไขสินค้า")`); return }
-      }
-      onCreated()
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
+function readAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'))
+    r.readAsDataURL(file)
+  })
+}
+
+function ProductFields({ f, set, setFile, setError }) {
   return (
-    <Modal title="เพิ่มสินค้า" onClose={onClose}>
-      <form className="form" onSubmit={submit} noValidate>
-        {error && <div className="alert alert-error" role="alert">{error}</div>}
-        <label className="field"><span>ชื่อสินค้า</span><input value={f.name} onChange={set('name')} autoFocus /></label>
-        <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} />
-          <small>ใส่เฉพาะข้อมูลจริง เช่น สภาพ ขนาด การรับประกัน คำตอบของแชตและคอนเทนต์ที่ AI เขียนจะอ้างจากข้อมูลนี้</small></label>
-        <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
-        <ImagePicker label="รูปสินค้า (ไม่บังคับ)" value={shot} onChange={setShot}
-          hint="เลือก png, jpeg หรือ webp ระบบย่อรูปให้อัตโนมัติ ใช้รูปที่เป็นของร้านเอง ห้ามมีรูปหน้าหรือข้อมูลส่วนตัวของลูกค้า รูปจะแสดงบนหน้าร้านสาธารณะ และจะถูกส่งให้ AI (Claude หรือ Gemini) ตอนที่คุณสั่งให้ AI วางแผนหรือร่างคอนเทนต์ของแคมเปญที่ใช้สินค้านี้" />
-        <label className="field"><span>หรือใส่ลิงก์รูปสินค้า (ถ้ามี)</span><input type="url" placeholder="https://…" value={f.image_url} onChange={set('image_url')} />
-          <small>ใช้ลิงก์รูปที่เป็นของร้านเอง รูปจะแสดงบนหน้าร้านสาธารณะ</small></label>
-        <h3 style={{ margin: '14px 0 2px' }}>ข้อมูลที่บอตใช้ตอบลูกค้า (ไม่บังคับ)</h3>
-        <FactsFields f={f} set={set} />
-        <label className="field"><span>ข้อมูลแบรนด์ (ถ้ามี)</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
-        <div className="modal-foot">
-          <button type="button" className="btn btn-quiet" onClick={onClose}>ย้อนกลับ</button>
-          <button className="btn btn-primary" disabled={busy || !f.name.trim()}>{busy ? 'กำลังบันทึก…' : 'เพิ่มสินค้า'}</button>
-        </div>
-      </form>
-    </Modal>
+    <>
+      <label className="field"><span>ชื่อสินค้า</span><input value={f.name} onChange={set('name')} /></label>
+      <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} />
+        <small>ใส่เฉพาะข้อมูลจริง เช่น สภาพ ขนาด การรับประกัน คำตอบของแชตและคอนเทนต์ที่ AI เขียนจะอ้างจากข้อมูลนี้</small></label>
+      <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
+      <label className="field"><span>รูปสินค้า (png, jpeg, webp ไม่เกิน 2 MB)</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+          const x = e.target.files?.[0] || null
+          if (x && x.size > 2 * 1024 * 1024) { setError('รูปใหญ่เกิน 2 MB'); e.target.value = ''; setFile(null); return }
+          setError(''); setFile(x)
+        }} />
+        <small>ใช้รูปที่เป็นของร้านเอง ห้ามมีรูปหน้าหรือข้อมูลส่วนตัวของลูกค้า รูปจะแสดงบนหน้าร้านสาธารณะ</small></label>
+      <label className="field"><span>ข้อมูลแบรนด์ (ถ้ามี)</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
+      <h3 style={{ margin: '14px 0 2px' }}>ข้อมูลที่บอตใช้ตอบลูกค้า (ไม่บังคับ)</h3>
+      <FactsFields f={f} set={set} />
+    </>
   )
 }
