@@ -70,17 +70,30 @@ func postJSON(ctx context.Context, url string, headers map[string]string, body [
 	return nil, fmt.Errorf("unavailable after retries: %w", lastErr)
 }
 
-// callClaude calls the Claude Messages API.
+// callClaude calls the Claude Messages API (text only).
 func callClaude(ctx context.Context, key, system, user string) (string, Usage, error) {
+	return callClaudeImg(ctx, key, system, user, nil)
+}
+
+// callClaudeImg is callClaude with an optional picture (the product photo) placed before the text.
+func callClaudeImg(ctx context.Context, key, system, user string, img *aiImage) (string, Usage, error) {
 	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {
 		model = "claude-sonnet-5-5"
+	}
+	var content any = user
+	if img != nil {
+		content = []any{
+			map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": img.Mime, "data": img.B64}},
+			map[string]string{"type": "text", "text": user},
+		}
+		system += imagePromptNote
 	}
 	body, err := json.Marshal(map[string]any{
 		"model":      model,
 		"max_tokens": 1500,
 		"system":     system,
-		"messages":   []map[string]string{{"role": "user", "content": user}},
+		"messages":   []map[string]any{{"role": "user", "content": content}},
 	})
 	if err != nil {
 		return "", Usage{}, err
@@ -112,15 +125,25 @@ func callClaude(ctx context.Context, key, system, user string) (string, Usage, e
 	return strings.TrimSpace(sb.String()), Usage{In: out.Usage.InputTokens, Out: out.Usage.OutputTokens}, nil
 }
 
-// callGemini calls the Gemini generateContent API. The key goes in a header, never in the URL.
+// callGemini calls the Gemini generateContent API (text only). The key goes in a header, never in the URL.
 func callGemini(ctx context.Context, key, system, user string) (string, Usage, error) {
+	return callGeminiImg(ctx, key, system, user, nil)
+}
+
+// callGeminiImg is callGemini with an optional picture (the product photo) placed before the text.
+func callGeminiImg(ctx context.Context, key, system, user string, img *aiImage) (string, Usage, error) {
 	model := os.Getenv("GEMINI_MODEL")
 	if model == "" {
 		model = "gemini-3.5-flash-lite"
 	}
+	parts := []map[string]any{{"text": user}}
+	if img != nil {
+		parts = []map[string]any{{"inline_data": map[string]string{"mime_type": img.Mime, "data": img.B64}}, {"text": user}}
+		system += imagePromptNote
+	}
 	body, err := json.Marshal(map[string]any{
 		"systemInstruction": map[string]any{"parts": []map[string]string{{"text": system}}},
-		"contents":          []map[string]any{{"role": "user", "parts": []map[string]string{{"text": user}}}},
+		"contents":          []map[string]any{{"role": "user", "parts": parts}},
 		"generationConfig":  map[string]any{"maxOutputTokens": 1500},
 	})
 	if err != nil {
@@ -186,22 +209,27 @@ type Result struct {
 // tryProviders tries each configured provider in order. A provider without an API key is skipped.
 // It returns By == "" when none succeeded.
 func tryProviders(ctx context.Context, system, user string) Result {
+	return tryProvidersImg(ctx, system, user, nil)
+}
+
+// tryProvidersImg is tryProviders with an optional product picture sent to the provider.
+func tryProvidersImg(ctx context.Context, system, user string, img *aiImage) Result {
 	configured := false
 	for _, p := range providerOrder() {
 		var key string
-		var call func(context.Context, string, string, string) (string, Usage, error)
+		var call func(context.Context, string, string, string, *aiImage) (string, Usage, error)
 		switch p {
 		case "claude":
-			key, call = os.Getenv("ANTHROPIC_API_KEY"), callClaude
+			key, call = os.Getenv("ANTHROPIC_API_KEY"), callClaudeImg
 		case "gemini":
-			key, call = os.Getenv("GEMINI_API_KEY"), callGemini
+			key, call = os.Getenv("GEMINI_API_KEY"), callGeminiImg
 		}
 		if key == "" {
 			continue
 		}
 		configured = true
 		pctx, cancel := context.WithTimeout(ctx, providerTimeout)
-		t, u, err := call(pctx, key, system, user)
+		t, u, err := call(pctx, key, system, user, img)
 		cancel()
 		if err != nil {
 			log.Printf("ai provider %s failed: %v", p, err)
@@ -222,10 +250,15 @@ func tryProviders(ctx context.Context, system, user string) Result {
 // generate returns AI text, or the rule/template fallback. It never fails. With allowExternal=false
 // (daily quota reached) no external provider is called.
 func generate(ctx context.Context, system, user string, allowExternal bool, fallback func() string) Result {
+	return generateImg(ctx, system, user, allowExternal, fallback, nil)
+}
+
+// generateImg is generate with an optional product picture (the template fallback ignores it).
+func generateImg(ctx context.Context, system, user string, allowExternal bool, fallback func() string, img *aiImage) Result {
 	if !allowExternal {
 		return Result{Text: fallback(), By: "template", Reason: "quota"}
 	}
-	r := tryProviders(ctx, system, user)
+	r := tryProvidersImg(ctx, system, user, img)
 	if r.By != "" {
 		return r
 	}

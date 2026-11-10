@@ -135,7 +135,7 @@ func upgradeHandler(pool *pgxpool.Pool) func(context.Context, Job) error {
 
 		switch j.Kind {
 		case "plan":
-			r := tryProviders(ctx, systemPrompt, planPrompt(ci))
+			r := tryProvidersImg(ctx, systemPrompt, planPrompt(ci), loadStoredImage(ctx, pool, j.CampaignID))
 			if r.By == "" {
 				return errors.New("ai still unavailable")
 			}
@@ -145,7 +145,7 @@ func upgradeHandler(pool *pgxpool.Pool) func(context.Context, Job) error {
 				r.Text, r.By, j.CampaignID)
 			return err
 		case "contents":
-			r := tryProviders(ctx, systemPrompt, contentsPrompt(ci, j.Channel, len(j.ContentIDs)))
+			r := tryProvidersImg(ctx, systemPrompt, contentsPrompt(ci, j.Channel, len(j.ContentIDs)), loadStoredImage(ctx, pool, j.CampaignID))
 			if r.By == "" {
 				return errors.New("ai still unavailable")
 			}

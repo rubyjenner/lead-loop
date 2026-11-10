@@ -17,6 +17,8 @@ type campaignInfo struct {
 	ProductDesc string
 	Price       *float64
 	Brand       string
+	// product facts filled in by marketing (product_facts.go); empty = not given, the AI must not invent them
+	Variants, ProductType, AfterSales, PaymentMethods, InstallmentInfo string
 }
 
 // facts renders the data the AI may use (also sent to the AI providers).
@@ -33,6 +35,14 @@ func (ci campaignInfo) facts() string {
 		}
 		if ci.Brand != "" {
 			fmt.Fprintf(&sb, "ข้อมูลแบรนด์: %s\n", ci.Brand)
+		}
+		for _, f := range []struct{ label, val string }{
+			{"รุ่น/ขนาด/สี", ci.Variants}, {"แบบสินค้า", ci.ProductType}, {"บริการหลังการขาย", ci.AfterSales},
+			{"ช่องทางชำระเงิน", ci.PaymentMethods}, {"การผ่อนชำระ", ci.InstallmentInfo},
+		} {
+			if strings.TrimSpace(f.val) != "" {
+				fmt.Fprintf(&sb, "%s: %s\n", f.label, strings.TrimSpace(f.val))
+			}
 		}
 	} else {
 		sb.WriteString("สินค้า: (ยังไม่ได้ระบุสินค้า)\n")

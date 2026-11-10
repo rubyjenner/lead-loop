@@ -328,5 +328,5 @@ func (ch *chatChannelAPI) mockConsent(c *fiber.Ctx) error {
 	}
 	auditUser(c, ch.leads.pool, action, "lead:"+strconv.FormatInt(id, 10), "via mock channel")
 	return c.JSON(fiber.Map{"lead_id": id, "created": created,
-		"reply": "ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย"})
+		"reply": chatReplyConsentThanks})
 }

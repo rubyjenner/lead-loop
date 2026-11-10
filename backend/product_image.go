@@ -8,7 +8,8 @@ package main
 //	GET  /public/product-image/:id                                       public, only when PUBLIC_CHAT_ENABLED=1
 //
 // The image is the shop's own product photo, never customer data. It is attached to the product and the storefront;
-// it is not sent to an AI provider.
+// when marketing asks the AI to plan a campaign or write content, the picture is also sent to the AI provider
+// (ai_image.go); the upload page says so.
 
 import (
 	"context"

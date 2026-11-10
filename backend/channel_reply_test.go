@@ -184,3 +184,25 @@ func TestNewTopicKeywordsDoNotOvermatch(t *testing.T) {
 		}
 	}
 }
+
+func TestCannedRepliesArePoliteAndFitOneBubble(t *testing.T) {
+	for _, r := range []string{chatReplyUnsub, chatReplyHandoff, chatReplyBuy, chatReplyGeneric, chatReplyConsentThanks} {
+		if !strings.Contains(r, "ค่ะ") && !strings.Contains(r, "คะ") {
+			t.Errorf("not polite Thai: %q", r)
+		}
+		if n := len([]rune(r)); n > 300 {
+			t.Errorf("too long for one chat bubble (%d runes): %q", n, r)
+		}
+	}
+}
+
+func TestPriceAndDetailsReadNaturally(t *testing.T) {
+	r := ComposeChatReply([]string{"asked_price"}, chatTestPhone)
+	if r != "iPhone 12 ราคา 12,900 บาทค่ะ" {
+		t.Errorf("price reply: %q", r)
+	}
+	r = ComposeChatReply([]string{"asked_details"}, chatTestPhone)
+	if !strings.HasPrefix(r, "รายละเอียดของ iPhone 12 นะคะ\n") || !strings.HasSuffix(r, "มือสอง สภาพ 90%") {
+		t.Errorf("details reply: %q", r)
+	}
+}

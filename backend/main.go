@@ -34,6 +34,7 @@ type Product struct {
 	Price       *float64  `json:"price"`
 	BrandInfo   string    `json:"brand_info"`
 	CreatedAt   time.Time `json:"created_at"`
+	ImageURL    string    `json:"image_url,omitempty"` // only filled by GET /products
 }
 
 type Content struct {
@@ -180,13 +181,14 @@ func main() {
 			Plan            string  `json:"plan"`
 			PlanGeneratedBy string  `json:"plan_generated_by"`
 			ProductName     *string `json:"product_name"`
+			ProductImageURL *string `json:"product_image_url"`
 		}
 		err = pool.QueryRow(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
-			        c.created_at, c.plan, c.plan_generated_by, p.name
+			        c.created_at, c.plan, c.plan_generated_by, p.name, p.image_url
 			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id WHERE c.id=$1`, id,
 		).Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status,
-			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName)
+			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName, &x.ProductImageURL)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
@@ -219,7 +221,7 @@ func main() {
 
 	app.Get("/products", func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.Context(),
-			`SELECT id, name, description, price::float8, brand_info, created_at
+			`SELECT id, name, description, price::float8, brand_info, created_at, image_url
 			 FROM products ORDER BY id DESC`)
 		if err != nil {
 			return serverError(c, err)
@@ -228,7 +230,7 @@ func main() {
 		out := []Product{}
 		for rows.Next() {
 			var x Product
-			if err := rows.Scan(&x.ID, &x.Name, &x.Description, &x.Price, &x.BrandInfo, &x.CreatedAt); err != nil {
+			if err := rows.Scan(&x.ID, &x.Name, &x.Description, &x.Price, &x.BrandInfo, &x.CreatedAt, &x.ImageURL); err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, x)

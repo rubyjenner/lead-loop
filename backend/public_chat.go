@@ -147,7 +147,7 @@ func registerPublicChatRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		return c.JSON(fiber.Map{"reply": "ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย"})
+		return c.JSON(fiber.Map{"reply": chatReplyConsentThanks})
 	})
 
 	// POST /public/chat/withdraw {"session_id":"..."}: the customer withdraws consent (PDPA); nothing more is processed

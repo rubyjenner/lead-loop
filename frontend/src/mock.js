@@ -104,7 +104,7 @@ export async function mockRequest(method, path, body, token) {
     const sid = body?.session_id; const key = 'pub-' + sid
     if (path.endsWith('/consent')) {
       if (!chatMap[key]) { const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้าเว็บ', channel: 'web', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }; leads.push(l); chatMap[key] = l.id }
-      return ok({ reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
+      return ok({ reply: 'ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ' })
     }
     if (path.endsWith('/withdraw')) { const l = leads.find((x) => x.id === chatMap[key]); if (l) { l.consent_general = false; l.consent_marketing = false; l.status = 'lost' } delete chatMap[key]; return ok({ ok: true, reply: 'ถอนความยินยอมแล้วค่ะ ระบบจะไม่ประมวลผลข้อมูลของคุณอีก' }) }
     if (path.endsWith('/messages')) {
@@ -212,7 +212,7 @@ export async function mockRequest(method, path, body, token) {
         const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้า (mock)', channel: 'mock', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }
         leads.push(l); chatMap[ext] = id = l.id
       }
-      return ok({ lead_id: id, created: true, reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
+      return ok({ lead_id: id, created: true, reply: 'ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ' })
     }
     if (path === '/channels/mock/messages' && method === 'POST') {
       const l = leads.find((x) => x.id === chatMap[ext])

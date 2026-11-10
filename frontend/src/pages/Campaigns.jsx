@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { CAMPAIGN_STATUS, Modal, Toast, baht, timeAgo } from '../ui.jsx'
+import ImagePicker from './ImagePicker.jsx'
 
 export default function Campaigns() {
   const { user } = useAuth()
@@ -161,6 +162,7 @@ function FactsModal({ product, onClose, onSaved }) {
     ...Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])),
     name: product.name || '', description: product.description || '', price: product.price ?? '', brand_info: product.brand_info || '',
   }))
+  const [shot, setShot] = useState('') // a new picture, shrunk by the browser (data URL)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -170,6 +172,10 @@ function FactsModal({ product, onClose, onSaved }) {
     try {
       await api('PUT', `/products/${product.id}`, { name: f.name.trim(), description: f.description.trim(), price: f.price === '' ? null : Number(f.price), brand_info: f.brand_info.trim() })
       await api('PUT', `/product-facts/${product.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]])))
+      if (shot) {
+        try { await api('POST', `/products/${product.id}/image`, { data_url: shot }) }
+        catch (err2) { setError(`บันทึกข้อมูลแล้ว แต่เปลี่ยนรูปไม่สำเร็จ: ${err2.message}`); return }
+      }
       onSaved()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -180,6 +186,9 @@ function FactsModal({ product, onClose, onSaved }) {
         <label className="field"><span>ชื่อสินค้า</span><input value={f.name} onChange={set('name')} /></label>
         <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} /></label>
         <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
+        <label className="field"><span>ข้อมูลแบรนด์</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
+        {product.image_url && !shot && <div className="img-row"><img src={product.image_url} alt={`รูปปัจจุบันของ ${product.name}`} referrerPolicy="no-referrer" /><span className="muted small">รูปปัจจุบัน</span></div>}
+        <ImagePicker label="เปลี่ยนรูปสินค้า (ไม่บังคับ)" value={shot} onChange={setShot} hint="รูปใหม่จะแทนรูปเดิมทันทีที่กดบันทึก และจะถูกส่งให้ AI ตอนสั่งวางแผนหรือร่างคอนเทนต์" />
         <p className="muted small">ใส่เฉพาะข้อมูลจริง บอตจะตอบลูกค้าตามข้อความด้านล่างตรง ๆ ช่องที่เว้นว่างบอตจะส่งต่อให้เจ้าหน้าที่ตอบ</p>
         <FactsFields f={f} set={set} />
         <div className="modal-foot">
@@ -191,18 +200,9 @@ function FactsModal({ product, onClose, onSaved }) {
   )
 }
 
-function readAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(String(r.result))
-    r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'))
-    r.readAsDataURL(file)
-  })
-}
-
 function ProductModal({ onClose, onCreated }) {
   const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '', image_url: '', variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '' })
-  const [file, setFile] = useState(null)
+  const [shot, setShot] = useState('') // picture already shrunk by the browser (data URL)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -212,10 +212,10 @@ function ProductModal({ onClose, onCreated }) {
     try {
       const body = { name: f.name.trim(), description: f.description.trim(), brand_info: f.brand_info.trim() }
       if (f.price !== '') body.price = Number(f.price)
-      if (f.image_url.trim() && !file) body.image_url = f.image_url.trim()
+      if (f.image_url.trim() && !shot) body.image_url = f.image_url.trim()
       const created = await api('POST', '/products', body)
-      if (file && created?.id) {
-        try { await api('POST', `/products/${created.id}/image`, { data_url: await readAsDataURL(file) }) }
+      if (shot && created?.id) {
+        try { await api('POST', `/products/${created.id}/image`, { data_url: shot }) }
         catch (err2) { setError(`เพิ่มสินค้าแล้ว แต่อัปโหลดรูปไม่สำเร็จ: ${err2.message}`); return }
       }
       if (created?.id && FACT_FIELDS.some(([k]) => f[k].trim())) {
@@ -233,13 +233,8 @@ function ProductModal({ onClose, onCreated }) {
         <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} />
           <small>ใส่เฉพาะข้อมูลจริง เช่น สภาพ ขนาด การรับประกัน คำตอบของแชตและคอนเทนต์ที่ AI เขียนจะอ้างจากข้อมูลนี้</small></label>
         <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
-        <label className="field"><span>อัปโหลดรูปสินค้า (png, jpeg, webp ไม่เกิน 2 MB)</span>
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
-            const x = e.target.files?.[0] || null
-            if (x && x.size > 2 * 1024 * 1024) { setError('รูปใหญ่เกิน 2 MB'); e.target.value = ''; setFile(null); return }
-            setError(''); setFile(x)
-          }} />
-          <small>ใช้รูปที่เป็นของร้านเอง ห้ามมีรูปหน้าหรือข้อมูลส่วนตัวของลูกค้า รูปจะแสดงบนหน้าร้านสาธารณะ และไม่ถูกส่งให้ AI</small></label>
+        <ImagePicker label="รูปสินค้า (ไม่บังคับ)" value={shot} onChange={setShot}
+          hint="เลือก png, jpeg หรือ webp ระบบย่อรูปให้อัตโนมัติ ใช้รูปที่เป็นของร้านเอง ห้ามมีรูปหน้าหรือข้อมูลส่วนตัวของลูกค้า รูปจะแสดงบนหน้าร้านสาธารณะ และจะถูกส่งให้ AI (Claude หรือ Gemini) ตอนที่คุณสั่งให้ AI วางแผนหรือร่างคอนเทนต์ของแคมเปญที่ใช้สินค้านี้" />
         <label className="field"><span>หรือใส่ลิงก์รูปสินค้า (ถ้ามี)</span><input type="url" placeholder="https://…" value={f.image_url} onChange={set('image_url')} />
           <small>ใช้ลิงก์รูปที่เป็นของร้านเอง รูปจะแสดงบนหน้าร้านสาธารณะ</small></label>
         <h3 style={{ margin: '14px 0 2px' }}>ข้อมูลที่บอตใช้ตอบลูกค้า (ไม่บังคับ)</h3>

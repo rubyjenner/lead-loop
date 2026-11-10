@@ -124,7 +124,7 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 			if _, _, err := ch.grantConsent(ctx, lineChannel, ext, name, campaign, false, chatConsentVersion(), lineCreatedBy); err != nil {
 				return err
 			}
-			return client.reply(ctx, ev.ReplyToken, lineText("ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย หรือพิมพ์ \"เจ้าหน้าที่\" หากต้องการคุยกับทีมงาน"))
+			return client.reply(ctx, ev.ReplyToken, lineText(chatReplyConsentThanks))
 		case "decline":
 			return client.reply(ctx, ev.ReplyToken, linePlain("ไม่เป็นไรค่ะ ยังไม่มีการเก็บข้อมูลของคุณ หากเปลี่ยนใจ พิมพ์ข้อความมาได้ทุกเมื่อ"))
 		}

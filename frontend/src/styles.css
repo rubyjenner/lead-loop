@@ -274,3 +274,12 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 .thread-msg{display:flex;flex-direction:column;gap:2px;max-width:80%;padding:8px 12px;border-radius:14px;line-height:1.55;overflow-wrap:anywhere;white-space:pre-wrap}
 .thread-in{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}
 .thread-out{align-self:flex-end;background:#e3f3f4;border:1px solid #b9dde0;border-bottom-right-radius:4px}
+
+/* picture picker (product form, edit modal, AI request) */
+.img-row{display:flex;align-items:center;gap:12px}
+.img-row img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#e3eaec}
+.img-btn{display:inline-flex;align-self:flex-start;cursor:pointer}
+.img-btn[aria-disabled=true]{opacity:.6;cursor:default}
+.ai-image{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.ai-image img.thumb{width:120px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:#e3eaec}
+.img-picker .err{color:var(--danger)}
