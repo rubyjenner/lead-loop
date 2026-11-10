@@ -75,7 +75,7 @@ export default function Campaigns() {
                       <td>{p.name}</td>
                       <td className="right nowrap">{p.price != null ? baht(p.price) : <span className="muted">-</span>}</td>
                       <td><span className={`tag ${n === FACT_TOTAL ? 'tag-l-closed' : 'tag-l-new'}`}>{n}/{FACT_TOTAL}</span></td>
-                      <td className="right">{canEdit && <button className="btn btn-quiet" onClick={() => setEditing(p)}>แก้ข้อมูลสินค้า</button>}</td>
+                      <td className="right">{canEdit && <button className="btn btn-quiet" onClick={() => setEditing(p)}>แก้ไขสินค้า</button>}</td>
                     </tr>
                   )
                 })}
@@ -157,24 +157,34 @@ function FactsFields({ f, set }) {
 }
 
 function FactsModal({ product, onClose, onSaved }) {
-  const [f, setF] = useState(() => Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])))
+  const [f, setF] = useState(() => ({
+    ...Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])),
+    name: product.name || '', description: product.description || '', price: product.price ?? '', brand_info: product.brand_info || '',
+  }))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   async function submit(e) {
     e.preventDefault()
     setError(''); setBusy(true)
-    try { await api('PUT', `/product-facts/${product.id}`, f); onSaved() } catch (err) { setError(err.message) } finally { setBusy(false) }
+    try {
+      await api('PUT', `/products/${product.id}`, { name: f.name.trim(), description: f.description.trim(), price: f.price === '' ? null : Number(f.price), brand_info: f.brand_info.trim() })
+      await api('PUT', `/product-facts/${product.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]])))
+      onSaved()
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   return (
-    <Modal title={`ข้อมูลสินค้า: ${product.name}`} onClose={onClose}>
+    <Modal title={`แก้ไขสินค้า: ${product.name}`} onClose={onClose}>
       <form className="form" onSubmit={submit} noValidate>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
-        <p className="muted small">ใส่เฉพาะข้อมูลจริง บอตจะตอบลูกค้าตามข้อความนี้ตรง ๆ ช่องที่เว้นว่างบอตจะส่งต่อให้เจ้าหน้าที่ตอบ ราคาและรายละเอียดแก้ตอนเพิ่มสินค้า</p>
+        <label className="field"><span>ชื่อสินค้า</span><input value={f.name} onChange={set('name')} /></label>
+        <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} /></label>
+        <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
+        <p className="muted small">ใส่เฉพาะข้อมูลจริง บอตจะตอบลูกค้าตามข้อความด้านล่างตรง ๆ ช่องที่เว้นว่างบอตจะส่งต่อให้เจ้าหน้าที่ตอบ</p>
         <FactsFields f={f} set={set} />
         <div className="modal-foot">
           <button type="button" className="btn btn-quiet" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+          <button className="btn btn-primary" disabled={busy || !f.name.trim()}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
         </div>
       </form>
     </Modal>
@@ -210,7 +220,7 @@ function ProductModal({ onClose, onCreated }) {
       }
       if (created?.id && FACT_FIELDS.some(([k]) => f[k].trim())) {
         try { await api('PUT', `/product-facts/${created.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]]))) }
-        catch (err3) { setError(`เพิ่มสินค้าแล้ว แต่บันทึกข้อมูลสินค้าไม่สำเร็จ: ${err3.message} (แก้ภายหลังได้ที่ปุ่ม "แก้ข้อมูลสินค้า")`); return }
+        catch (err3) { setError(`เพิ่มสินค้าแล้ว แต่บันทึกข้อมูลสินค้าไม่สำเร็จ: ${err3.message} (แก้ภายหลังได้ที่ปุ่ม "แก้ไขสินค้า")`); return }
       }
       onCreated()
     } catch (err) { setError(err.message) } finally { setBusy(false) }

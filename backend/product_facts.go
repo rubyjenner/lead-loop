@@ -13,6 +13,7 @@ package main
 //
 //	GET /product-facts         list for every product (login)
 //	PUT /product-facts/:id     marketing/admin, replaces the five texts of one product
+//	PUT /products/:id          marketing/admin, edits name, description, price, brand info
 //
 // Wire-up: initProductFacts is called from registerStaffReplyPublic and the routes from registerStaffReplyRoutes,
 // so main.go needs no new line.
@@ -135,6 +136,36 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 			out = append(out, f)
 		}
 		return c.JSON(out)
+	})
+
+	// PUT /products/:id {"name","description","price","brand_info"}: edit a product after it was created
+	app.Put("/products/:id", writers, func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid product id"})
+		}
+		var in struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Price       *float64 `json:"price"`
+			BrandInfo   string   `json:"brand_info"`
+		}
+		if err := c.BodyParser(&in); err != nil || strings.TrimSpace(in.Name) == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+		}
+		if in.Price != nil && *in.Price < 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "price must not be negative"})
+		}
+		tag, err := pool.Exec(c.Context(), `UPDATE products SET name=$1, description=$2, price=$3, brand_info=$4 WHERE id=$5`,
+			strings.TrimSpace(in.Name), strings.TrimSpace(in.Description), in.Price, strings.TrimSpace(in.BrandInfo), id)
+		if err != nil {
+			return serverError(c, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return c.Status(404).JSON(fiber.Map{"error": "product not found"})
+		}
+		auditUser(c, pool, "product_update", "product:"+strconv.FormatInt(id, 10), "")
+		return c.JSON(fiber.Map{"ok": true})
 	})
 
 	app.Put("/product-facts/:id", writers, func(c *fiber.Ctx) error {

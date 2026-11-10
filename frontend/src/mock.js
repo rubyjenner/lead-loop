@@ -151,6 +151,8 @@ export async function mockRequest(method, path, body, token) {
     products.push(p); return ok(p, 201)
   }
   if (method === 'GET' && path === '/product-facts') return ok(products.map((p) => ({ id: p.id, variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '', ...(productFacts[p.id] || {}) })))
+  m = path.match(/^\/products\/(\d+)$/)
+  if (method === 'PUT' && m) { const pr = products.find((x) => x.id === +m[1]); if (!pr) return err(404, 'product not found'); Object.assign(pr, { name: body.name, description: body.description || '', price: body.price ?? null, brand_info: body.brand_info || '' }); return ok({ ok: true }) }
   m = path.match(/^\/product-facts\/(\d+)$/)
   if (method === 'PUT' && m) { productFacts[+m[1]] = { variants: body.variants || '', product_type: body.product_type || '', after_sales: body.after_sales || '', payment_methods: body.payment_methods || '', installment_info: body.installment_info || '' }; return ok({ id: +m[1], ...productFacts[+m[1]] }) }
   m = path.match(/^\/products\/(\d+)\/image$/)
