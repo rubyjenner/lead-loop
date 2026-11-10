@@ -11,3 +11,7 @@ dist/
 !.env.production.example
 backups/
 .vite/
+
+*.patch
+*.bundle
+*.zip
