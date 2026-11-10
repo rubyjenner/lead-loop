@@ -178,13 +178,13 @@ Check 'withdraw for unknown session is harmless (200)' ($wd2.Status -eq 200)
 # ---------------------------------------------------------------- product facts and AI-assisted ordering
 Write-Host "`n== Product facts: the bot answers only from what marketing filled in =="
 $camp = Call 'GET' "/campaigns/$CampaignId" $token $null
-$pid = $camp.Json.product_id
-if (-not $pid) { Write-Host '      (campaign has no product: product-facts checks skipped)' -ForegroundColor Yellow }
+$productId = $camp.Json.product_id
+if (-not $productId) { Write-Host '      (campaign has no product: product-facts checks skipped)' -ForegroundColor Yellow }
 else {
-    $oldFacts = @((Call 'GET' '/product-facts' $token $null).Json) | Where-Object { $_.id -eq $pid } | Select-Object -First 1
-    $put = Call 'PUT' "/product-facts/$pid" $token @{ variants = 'ไซส์ S M L สีขาว ดำ'; product_type = 'คอกลม'; after_sales = ''; payment_methods = 'โอนพร้อมเพย์ บัตรเครดิต'; installment_info = 'ผ่อน 0% 3 เดือน' }
+    $oldFacts = @((Call 'GET' '/product-facts' $token $null).Json) | Where-Object { $_.id -eq $productId } | Select-Object -First 1
+    $put = Call 'PUT' "/product-facts/$productId" $token @{ variants = 'ไซส์ S M L สีขาว ดำ'; product_type = 'คอกลม'; after_sales = ''; payment_methods = 'โอนพร้อมเพย์ บัตรเครดิต'; installment_info = 'ผ่อน 0% 3 เดือน' }
     Check 'marketing saves product facts (200)' ($put.Status -eq 200 -and $put.Json.variants -like '*ไซส์*')
-    Check 'facts longer than 500 chars -> 400' ((Call 'PUT' "/product-facts/$pid" $token @{ variants = ('ก' * 501) }).Status -eq 400)
+    Check 'facts longer than 500 chars -> 400' ((Call 'PUT' "/product-facts/$productId" $token @{ variants = ('ก' * 501) }).Status -eq 400)
     $sid2 = NewSession; $name2 = "Smoke Buy $(Get-Date -Format 'HHmmss')"
     [void](Call 'POST' '/public/chat/consent' $null @{ session_id = $sid2; display_name = $name2; campaign_id = $CampaignId; consent_marketing = $false })
     $q1 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'มีสีอะไรบ้างคะ' }
@@ -198,7 +198,7 @@ else {
     $mine2 = @((Call 'GET' '/leads?channel=web' $token $null).Json) | Where-Object { $_.display_name -eq $name2 } | Select-Object -First 1
     Check 'ready to buy -> lead is ready for sales' ($null -ne $mine2 -and $mine2.status -eq 'qualified')
     if ($mine2) { [void](Call 'DELETE' "/leads/$($mine2.id)" $token $null) }
-    if ($oldFacts) { [void](Call 'PUT' "/product-facts/$pid" $token @{ variants = $oldFacts.variants; product_type = $oldFacts.product_type; after_sales = $oldFacts.after_sales; payment_methods = $oldFacts.payment_methods; installment_info = $oldFacts.installment_info }) }
+    if ($oldFacts) { [void](Call 'PUT' "/product-facts/$productId" $token @{ variants = $oldFacts.variants; product_type = $oldFacts.product_type; after_sales = $oldFacts.after_sales; payment_methods = $oldFacts.payment_methods; installment_info = $oldFacts.installment_info }) }
 }
 
 # ---------------------------------------------------------------- cleanup of the test lead
