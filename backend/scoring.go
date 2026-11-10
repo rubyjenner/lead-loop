@@ -312,7 +312,7 @@ type ScoringSettings struct {
 func DefaultScoringSettings() ScoringSettings {
 	return ScoringSettings{
 		HandoffThreshold: 50, WarmMin: 25, ScoreMin: 0, ScoreMax: 100,
-		ImmediateHandoff: []string{"requested_visit", "requested_human", "requested_callback"},
+		ImmediateHandoff: []string{"requested_visit", "requested_human", "requested_callback", "ready_to_buy"},
 		Disqualify:       []string{"unsubscribed"},
 	}
 }

@@ -108,7 +108,7 @@ func registerPublicChatRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		return c.JSON(fiber.Map{"reply": res.Reply, "needs_consent": res.NeedsConsent})
+		return c.JSON(fiber.Map{"reply": res.Reply, "needs_consent": res.NeedsConsent, "staff_mode": res.StaffMode})
 	})
 
 	// POST /public/chat/consent {"session_id":"...","display_name":"...","campaign_id":1,"consent_marketing":false}
@@ -207,6 +207,7 @@ func registerShopRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	if err := initShop(context.Background(), pool); err != nil {
 		log.Fatalf("shop schema: %v", err)
 	}
+	registerProductImagePublic(app, pool)
 	infoLimit := limiter.New(limiter.Config{Max: 60, Expiration: time.Minute})
 	// GET /public/shop?campaign_id=1 -> campaign, product (name, description, price, image) and approved posts
 	app.Get("/public/shop", infoLimit, func(c *fiber.Ctx) error {

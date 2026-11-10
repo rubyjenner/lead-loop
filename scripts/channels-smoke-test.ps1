@@ -1,133 +1,175 @@
-# LeadLoop: smoke test for the mock chat channel (mock data only; use a dev database).
-# Needs: docker compose up -d, the channels code built in, and db/channels.sql applied.
-# This file is pure ASCII (Thai text is sent as \uXXXX escapes) so Windows PowerShell 5.1 reads it correctly.
-param([string]$BaseUrl = 'http://localhost:8080', [string]$Email = 'admin@example.com')
+﻿<#
+ Public chat + storefront smoke test (no login needed for the public part).
+ FICTITIOUS DATA ONLY. Each run uses a new random session id and a display name starting with "Smoke Web".
+
+ Modes:
+   .\scripts\public-chat-smoke-test.ps1 -ExpectDisabled            # PUBLIC_CHAT_ENABLED not set: everything must be closed
+   .\scripts\public-chat-smoke-test.ps1 -CampaignId 1              # chat on: full flow
+   .\scripts\public-chat-smoke-test.ps1 -CampaignId 1 -RateLimit   # LAST: trips the consent limit (8/min per IP)
+ Prod via Caddy: add  -Base http://localhost/api
+ Admin password (to check the lead in the back office): $env:SMOKE_ADMIN_PASSWORD, or the script asks.
+ Without -CampaignId the script uses the newest campaign it finds (needs admin login).
+#>
+param(
+    [string]$Base = 'http://localhost:8080',
+    [string]$AdminEmail = 'admin@example.com',
+    [int]$CampaignId = 0,
+    [switch]$ExpectDisabled,
+    [switch]$RateLimit
+)
 $ErrorActionPreference = 'Stop'
-$script:pass = 0; $script:fail = 0; $script:Token = $null
-
-function Check([string]$name, [bool]$ok) {
-  if ($ok) { Write-Host "PASS  $name" -ForegroundColor Green; $script:pass++ }
-  else { Write-Host "FAIL  $name" -ForegroundColor Red; $script:fail++ }
+$pass = 0; $fail = 0
+function Check($name, $ok) {
+    if ($ok) { Write-Host "PASS  $name" -ForegroundColor Green; $script:pass++ }
+    else { Write-Host "FAIL  $name" -ForegroundColor Red; $script:fail++ }
 }
-
-function Call([string]$Method, [string]$Path, $Json = $null, [switch]$NoAuth) {
-  $h = @{}
-  if (-not $NoAuth -and $script:Token) { $h['Authorization'] = "Bearer $($script:Token)" }
-  $req = @{ Uri = "$BaseUrl$Path"; Method = $Method; Headers = $h; UseBasicParsing = $true }
-  if ($null -ne $Json) {
-    $req['Body'] = [System.Text.Encoding]::UTF8.GetBytes($Json)
-    $req['ContentType'] = 'application/json; charset=utf-8'
-  }
-  $status = 0; $content = $null
-  try { $r = Invoke-WebRequest @req; $status = [int]$r.StatusCode; $content = $r.Content }
-  catch {
-    $resp = $_.Exception.Response
-    if ($null -eq $resp) { throw }
-    $status = [int]$resp.StatusCode
-    $content = $_.ErrorDetails.Message
-    if (-not $content) {
-      try { $sr = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8); $content = $sr.ReadToEnd() } catch {}
+function Call($method, $path, $token, $body) {
+    $p = @{ Method = $method; Uri = "$Base$path"; UseBasicParsing = $true }
+    if ($token) { $p.Headers = @{ Authorization = "Bearer $token" } }
+    if ($null -ne $body) {
+        $p.ContentType = 'application/json; charset=utf-8'
+        $p.Body = [System.Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 10 -Compress))
     }
-  }
-  $obj = $null
-  if ($content) { try { $obj = $content | ConvertFrom-Json } catch {} }
-  [pscustomobject]@{ Status = $status; Body = $obj }
+    try {
+        $r = Invoke-WebRequest @p
+        $status = [int]$r.StatusCode
+        $text = [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
+    } catch {
+        if (-not $_.Exception.Response) { throw }
+        $status = [int]$_.Exception.Response.StatusCode
+        $text = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { '' }
+    }
+    $json = $null; try { $json = $text | ConvertFrom-Json } catch { }
+    [pscustomobject]@{ Status = $status; Json = $json; Text = $text }
+}
+function NewSession { 'smoke' + [guid]::NewGuid().ToString('N').Substring(0, 20) }   # 25 chars, matches [A-Za-z0-9_-]{16,64}
+
+# ---------------------------------------------------------------- disabled mode
+if ($ExpectDisabled) {
+    Write-Host "== Public chat must be CLOSED (PUBLIC_CHAT_ENABLED not set) =="
+    $sid = NewSession
+    $info = Call 'GET' '/public/chat/info' $null $null
+    Check 'info says enabled:false (200)' ($info.Status -eq 200 -and $info.Json.enabled -eq $false)
+    $m = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ทดสอบ' }
+    Check 'messages -> 404' ($m.Status -eq 404)
+    $c = Call 'POST' '/public/chat/consent' $null @{ session_id = $sid; display_name = 'Smoke Web closed' }
+    Check 'consent -> 404' ($c.Status -eq 404)
+    $w = Call 'POST' '/public/chat/withdraw' $null @{ session_id = $sid }
+    Check 'withdraw -> 404' ($w.Status -eq 404)
+    $s = Call 'GET' '/public/shop?campaign_id=1' $null $null
+    Check 'storefront -> 404' ($s.Status -eq 404)
+    Write-Host "`nResult: $pass passed, $fail failed"
+    if ($fail -gt 0) { exit 1 } else { exit 0 }
 }
 
-function CountOf($body) { if ($null -eq $body) { 0 } else { @($body).Count } }
+# ---------------------------------------------------------------- admin login (to find the campaign and verify the lead)
+if ($env:SMOKE_ADMIN_PASSWORD) { $pw = $env:SMOKE_ADMIN_PASSWORD }
+else {
+    $sec = Read-Host "Password for $AdminEmail (back-office check)" -AsSecureString
+    $pw = [System.Net.NetworkCredential]::new('', $sec).Password
+}
+$login = Call 'POST' '/auth/login' $null @{ email = $AdminEmail; password = $pw }
+Check 'admin login' ($login.Status -eq 200 -and $login.Json.token)
+if ($login.Status -ne 200) { exit 1 }
+$token = $login.Json.token
 
-function Msg([string]$ext, [string]$text) {
-  Call 'POST' '/channels/mock/messages' ('{"external_id":"' + $ext + '","text":"' + $text + '"}')
+if ($CampaignId -le 0) {
+    $camps = Call 'GET' '/campaigns' $token $null
+    $list = @($camps.Json)
+    if ($list.Count -eq 0) { Write-Host 'No campaign found. Run scripts\demo-seed.ps1 first.' -ForegroundColor Red; exit 1 }
+    $CampaignId = [int](($list | Sort-Object { [int]$_.id } -Descending | Select-Object -First 1).id)
+    Write-Host "Using campaign id $CampaignId"
 }
 
-# Thai test phrases as JSON escapes
-$T_PRICE    = '\u0e23\u0e32\u0e04\u0e32\u0e40\u0e17\u0e48\u0e32\u0e44\u0e2b\u0e23\u0e48'     # asks the price
-$T_CALLBACK = '\u0e0a\u0e48\u0e27\u0e22\u0e15\u0e34\u0e14\u0e15\u0e48\u0e2d\u0e01\u0e25\u0e31\u0e1a\u0e14\u0e49\u0e27\u0e22'  # asks for a callback
-$T_STOP     = '\u0e2b\u0e22\u0e38\u0e14'      # unsubscribe keyword
+# ---------------------------------------------------------------- storefront
+Write-Host "`n== Storefront =="
+$info = Call 'GET' "/public/chat/info?campaign_id=$CampaignId" $null $null
+Check 'info: enabled + campaign name' ($info.Status -eq 200 -and $info.Json.enabled -eq $true -and $info.Json.campaign_name)
+Check 'info: product price is public' ($null -ne $info.Json.product_price)
+$shop = Call 'GET' "/public/shop?campaign_id=$CampaignId" $null $null
+Check 'shop: product + posts array' ($shop.Status -eq 200 -and $shop.Json.product_name -and $null -ne $shop.Json.posts)
+Check 'shop: no private fields (score, lead, budget)' ($shop.Text -notmatch '"(score|level|lead_id|budget)"')
+$shop400 = Call 'GET' '/public/shop' $null $null
+Check 'shop without campaign_id -> 400' ($shop400.Status -eq 400)
+$shop404 = Call 'GET' '/public/shop?campaign_id=999999999' $null $null
+Check 'shop unknown campaign -> 404' ($shop404.Status -eq 404)
 
-Write-Host "`n== Login ==" -ForegroundColor Cyan
-if ($env:SMOKE_ADMIN_PASSWORD) {
-  $plain = $env:SMOKE_ADMIN_PASSWORD   # same variable as smoke-test.ps1
-} else {
-  $sec = Read-Host 'Admin password' -AsSecureString
-  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+# ---------------------------------------------------------------- validation
+Write-Host "`n== Input validation =="
+$bad1 = Call 'POST' '/public/chat/messages' $null @{ session_id = 'short'; text = 'hi' }
+Check 'bad session id -> 400' ($bad1.Status -eq 400)
+$bad2 = Call 'POST' '/public/chat/messages' $null @{ session_id = (NewSession); text = '   ' }
+Check 'empty text -> 400' ($bad2.Status -eq 400)
+$bad3 = Call 'POST' '/public/chat/messages' $null @{ session_id = (NewSession); text = ('ก' * 501) }
+Check 'text over 500 chars -> 400' ($bad3.Status -eq 400)
+$bad4 = Call 'POST' '/public/chat/consent' $null @{ session_id = (NewSession); campaign_id = 999999999 }
+Check 'consent with unknown campaign -> 404' ($bad4.Status -eq 404)
+
+# ---------------------------------------------------------------- consent first
+Write-Host "`n== Consent before anything is stored =="
+$sid = NewSession
+$name = "Smoke Web $(Get-Date -Format 'HHmmss')"
+$before = Call 'GET' '/leads?channel=web' $token $null
+$countBefore = @($before.Json).Count
+$m1 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ราคาเท่าไหร่ครับ' }
+Check 'message before consent -> needs_consent' ($m1.Status -eq 200 -and $m1.Json.needs_consent -eq $true -and $m1.Json.reply)
+Check 'public reply hides score/level/lead_id' ($m1.Text -notmatch '"(score|level|lead_id)"')
+$mid = Call 'GET' '/leads?channel=web' $token $null
+Check 'no lead created before consent' (@($mid.Json).Count -eq $countBefore)
+
+# ---------------------------------------------------------------- consent, chat, scoring
+Write-Host "`n== Consent, chat, lead creation =="
+$cons = Call 'POST' '/public/chat/consent' $null @{ session_id = $sid; display_name = $name; campaign_id = $CampaignId; consent_marketing = $false }
+Check 'consent accepted (200)' ($cons.Status -eq 200 -and $cons.Json.reply)
+$m2 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ราคาเท่าไหร่ครับ' }
+Check 'ask price -> reply, no consent prompt' ($m2.Status -eq 200 -and $m2.Json.needs_consent -eq $false -and $m2.Json.reply)
+Check 'ask price -> reply mentions a number' ($m2.Json.reply -match '\d')
+$after = Call 'GET' '/leads?channel=web' $token $null
+$mine = @($after.Json) | Where-Object { $_.display_name -eq $name } | Select-Object -First 1
+Check 'lead exists in back office (channel web)' ($null -ne $mine)
+if (-not $mine) { Write-Host 'Lead not found; cannot continue.' -ForegroundColor Red; Write-Host "`nResult: $pass passed, $fail failed"; exit 1 }
+$leadId = [int]$mine.id
+$d1 = Call 'GET' "/leads/$leadId" $token $null
+Check 'lead linked to the campaign' ($mine.campaign_id -eq $CampaignId)
+Check 'lead has a score from the price question' ($d1.Json.score -ge 1 -and $d1.Json.score_breakdown.Count -ge 1)
+$score1 = [int]$d1.Json.score
+
+# ---------------------------------------------------------------- hand-off to sales
+Write-Host "`n== Hand-off to sales =="
+$m3 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'สนใจครับ ขอคุยกับเจ้าหน้าที่ ช่วยโทรกลับด้วย' }
+Check 'ask for a human -> reply' ($m3.Status -eq 200 -and $m3.Json.reply)
+$d2 = Call 'GET' "/leads/$leadId" $token $null
+Check 'score increased' ([int]$d2.Json.score -gt $score1)
+Check 'lead level is Hot' ("$($d2.Json.level)" -match '(?i)hot')
+Write-Host ("      score {0} -> {1}, level {2}, status {3}" -f $score1, $d2.Json.score, $d2.Json.level, $d2.Json.status)
+
+# ---------------------------------------------------------------- withdraw
+Write-Host "`n== Withdraw consent (PDPA) =="
+$wd = Call 'POST' '/public/chat/withdraw' $null @{ session_id = $sid }
+Check 'withdraw ok' ($wd.Status -eq 200 -and $wd.Json.ok -eq $true)
+$m4 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ยังอยู่ไหม' }
+Check 'after withdraw -> asked for consent again' ($m4.Status -eq 200 -and $m4.Json.needs_consent -eq $true)
+$d3 = Call 'GET' "/leads/$leadId" $token $null
+Check 'back office shows consent_general = false' ($d3.Json.consent_general -eq $false)
+$wd2 = Call 'POST' '/public/chat/withdraw' $null @{ session_id = (NewSession) }
+Check 'withdraw for unknown session is harmless (200)' ($wd2.Status -eq 200)
+
+# ---------------------------------------------------------------- cleanup of the test lead
+Write-Host "`n== Cleanup =="
+$del = Call 'DELETE' "/leads/$leadId" $token $null
+Check 'anonymize the smoke lead' ($del.Status -eq 200)
+
+# ---------------------------------------------------------------- rate limit (optional, last)
+if ($RateLimit) {
+    Write-Host "`n== Rate limit (your IP will be limited for about 1 minute) =="
+    $hit429 = $false
+    for ($i = 1; $i -le 12; $i++) {
+        $r = Call 'POST' '/public/chat/consent' $null @{ session_id = (NewSession); display_name = "Smoke Web rl$i"; campaign_id = $CampaignId }
+        if ($r.Status -eq 429) { $hit429 = $true; Write-Host "      429 at request $i"; break }
+    }
+    Check 'consent endpoint returns 429 after too many requests' $hit429
+    Write-Host 'Note: lead rows created by this step are mock "Smoke Web rl*" leads; anonymize them from the back office if you want.'
 }
-$login = Call 'POST' '/auth/login' (@{ email = $Email; password = $plain } | ConvertTo-Json) -NoAuth
-Check 'admin login' ($login.Status -eq 200 -and $login.Body.token)
-if ($login.Status -ne 200) {
-  Write-Host "Cannot continue: login returned HTTP $($login.Status) (401 = wrong password, 429 = too many failed logins -> docker compose restart api)" -ForegroundColor Red
-  exit 1
-}
-$script:Token = $login.Body.token
-$plain = $null
 
-Write-Host "`n== Setup: product 12900 THB + campaign ==" -ForegroundColor Cyan
-$tag = [guid]::NewGuid().ToString('N').Substring(0, 8)
-$prod = Call 'POST' '/products' ('{"name":"Smoke Phone ' + $tag + '","description":"Used, battery 90%","price":12900,"brand_info":"smoke"}')
-$camp = Call 'POST' '/campaigns' ('{"name":"smoke-channel-' + $tag + '","product_id":' + $prod.Body.id + ',"budget":1000}')
-Check 'product and campaign created' ($prod.Status -eq 201 -and $camp.Status -eq 201)
-$cid = $camp.Body.id
-
-$ext = 'smoke-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
-$before = CountOf (Call 'GET' '/leads?channel=mock').Body
-
-Write-Host "`n== Consent first: nothing is stored before the customer accepts ==" -ForegroundColor Cyan
-$m = Msg $ext $T_PRICE
-Check 'unknown customer gets the consent prompt (200, needs_consent)' ($m.Status -eq 200 -and $m.Body.needs_consent -eq $true -and $m.Body.reply)
-$after = CountOf (Call 'GET' '/leads?channel=mock').Body
-Check 'no lead was stored before consent' ($after -eq $before)
-
-Write-Host "`n== Customer accepts ==" -ForegroundColor Cyan
-$c1 = Call 'POST' '/channels/mock/consent' ('{"external_id":"' + $ext + '","campaign_id":' + $cid + ',"consent_marketing":true}')
-Check 'consent creates the lead (created=true)' ($c1.Status -eq 200 -and $c1.Body.created -eq $true -and $c1.Body.lead_id)
-$lid = $c1.Body.lead_id
-$c2 = Call 'POST' '/channels/mock/consent' ('{"external_id":"' + $ext + '","campaign_id":' + $cid + ',"consent_marketing":true}')
-Check 'accepting twice does not create a second lead' ($c2.Status -eq 200 -and $c2.Body.created -eq $false -and $c2.Body.lead_id -eq $lid)
-$bad = Call 'POST' '/channels/mock/consent' ('{"external_id":"' + $ext + '","campaign_id":999999999}')
-Check 'unknown campaign -> 404' ($bad.Status -eq 404)
-
-Write-Host "`n== Messages: events, score and replies ==" -ForegroundColor Cyan
-$m = Msg $ext $T_PRICE
-Check 'price question detected as asked_price' ($m.Status -eq 200 -and ($m.Body.detected -contains 'asked_price'))
-Check 'reply states the product price from the database' ($m.Body.reply -like '*12,900*')
-Check 'score is 10 (cold)' ($m.Body.score -eq 10 -and $m.Body.level -eq 'cold')
-
-$m = Msg $ext 'hello'
-Check 'message without keywords: nothing detected, score unchanged' ($m.Status -eq 200 -and @($m.Body.detected).Count -eq 0 -and $m.Body.score -eq 10 -and $m.Body.reply)
-
-$m = Msg $ext $T_CALLBACK
-Check 'callback request: immediate handoff, hot' ($m.Status -eq 200 -and $m.Body.immediate_handoff -eq $true -and $m.Body.level -eq 'hot')
-Check 'score is 40 (price 10 + callback 30)' ($m.Body.score -eq 40)
-$lead = Call 'GET' "/leads/$lid"
-Check 'lead is qualified' ($lead.Status -eq 200 -and $lead.Body.status -eq 'qualified')
-
-Write-Host "`n== Unsubscribe keyword ==" -ForegroundColor Cyan
-$m = Msg $ext $T_STOP
-Check 'unsubscribe detected' ($m.Status -eq 200 -and ($m.Body.detected -contains 'unsubscribed'))
-$lead = Call 'GET' "/leads/$lid"
-Check 'marketing consent withdrawn' ($lead.Body.consent_marketing -eq $false)
-
-Write-Host "`n== Withdraw general consent: processing stops ==" -ForegroundColor Cyan
-$w = Call 'POST' "/leads/$lid/consent" '{"kind":"general","action":"withdrawn","text_version":"v1"}'
-Check 'withdraw general consent' ($w.Status -eq 200)
-$m = Msg $ext $T_PRICE
-Check 'after withdrawal the customer is asked for consent again' ($m.Status -eq 200 -and $m.Body.needs_consent -eq $true)
-$lead = Call 'GET' "/leads/$lid"
-Check 'score did not change after withdrawal' ($lead.Body.score -eq 40)
-
-Write-Host "`n== Input checks and login ==" -ForegroundColor Cyan
-Check 'empty text -> 400' ((Msg $ext '').Status -eq 400)
-Check 'missing external_id -> 400' ((Call 'POST' '/channels/mock/messages' '{"text":"x"}').Status -eq 400)
-Check 'no token -> 401' ((Call 'POST' '/channels/mock/messages' '{"external_id":"a","text":"x"}' -NoAuth).Status -eq 401)
-
-Write-Host "`n== Anonymize, then the same person starts fresh ==" -ForegroundColor Cyan
-Check 'anonymize lead' ((Call 'DELETE' "/leads/$lid").Status -eq 200)
-$m = Msg $ext $T_PRICE
-Check 'after anonymize: consent prompt again' ($m.Status -eq 200 -and $m.Body.needs_consent -eq $true)
-$c3 = Call 'POST' '/channels/mock/consent' ('{"external_id":"' + $ext + '","campaign_id":' + $cid + '}')
-Check 'new consent makes a NEW lead' ($c3.Status -eq 200 -and $c3.Body.created -eq $true -and $c3.Body.lead_id -ne $lid)
-Call 'DELETE' "/leads/$($c3.Body.lead_id)" | Out-Null
-
-Write-Host "`n$($script:pass) passed, $($script:fail) failed" -ForegroundColor $(if ($script:fail -eq 0) { 'Green' } else { 'Red' })
-Write-Host 'Mock leads were anonymized. The smoke-channel product and campaign stay in the dev database.'
-if ($script:fail -gt 0) { exit 1 }
+Write-Host "`nResult: $pass passed, $fail failed"
+if ($fail -gt 0) { exit 1 }

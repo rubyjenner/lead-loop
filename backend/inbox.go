@@ -35,6 +35,12 @@ func registerInboxRoutes(app fiber.Router, pool *pgxpool.Pool) {
 			}
 			out["leads_ready"] = n
 			out["leads_ready_oldest"] = oldest
+			var unread int // leads where the customer wrote and nobody has opened the conversation yet
+			if err := pool.QueryRow(ctx, `SELECT count(DISTINCT m.lead_id) FROM customer_messages m JOIN leads l ON l.id=m.lead_id
+				WHERE m.seen_at IS NULL AND l.anonymized_at IS NULL`).Scan(&unread); err != nil {
+				return serverError(c, err)
+			}
+			out["messages_unread"] = unread
 		}
 		if u.Role == "marketing" || u.Role == "admin" {
 			var contents, followups int

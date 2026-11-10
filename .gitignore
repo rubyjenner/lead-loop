@@ -4,3 +4,10 @@
 node_modules/
 dist/
 .vscode/
+
+# local test env files and backups (keep the *.example templates)
+.env.*
+!.env.example
+!.env.production.example
+backups/
+.vite/

@@ -44,7 +44,7 @@ func chatConsentVersion() string {
 	if v := strings.TrimSpace(os.Getenv("CONSENT_VERSION")); v != "" {
 		return v
 	}
-	return "v1"
+	return "v2" // v2: the notice says that texts typed to staff are kept for them (see ChatConsentPrompt)
 }
 
 // ---------- core (no HTTP: LINE will call these too) ----------
@@ -59,6 +59,7 @@ type chatIncomingResult struct {
 	Level            string   `json:"level"`
 	Qualified        bool     `json:"qualified"`
 	ImmediateHandoff bool     `json:"immediate_handoff"`
+	StaffMode        bool     `json:"staff_mode"` // true: a person handles this customer, the bot does not answer
 }
 
 func (ch *chatChannelAPI) findLead(ctx context.Context, channel, extID string) (int64, bool, error) {
@@ -78,17 +79,19 @@ func (ch *chatChannelAPI) findLead(ctx context.Context, channel, extID string) (
 func (ch *chatChannelAPI) loadProduct(ctx context.Context, leadID int64) (*chatProduct, error) {
 	var name, desc *string
 	var price *float64
+	var variants, ptype, afterSales, payment, installment string
 	err := ch.leads.pool.QueryRow(ctx, `
-		SELECT p.name, p.description, p.price::float8
+		SELECT p.name, p.description, p.price::float8, p.variants, p.product_type, p.after_sales, p.payment_methods, p.installment_info
 		FROM leads l JOIN campaigns c ON c.id = l.campaign_id JOIN products p ON p.id = c.product_id
-		WHERE l.id = $1`, leadID).Scan(&name, &desc, &price)
+		WHERE l.id = $1`, leadID).Scan(&name, &desc, &price, &variants, &ptype, &afterSales, &payment, &installment)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	p := &chatProduct{Price: price}
+	p := &chatProduct{Price: price, Variants: variants, ProductType: ptype, AfterSales: afterSales,
+		PaymentMethods: payment, InstallmentInfo: installment}
 	if name != nil {
 		p.Name = *name
 	}
@@ -117,6 +120,7 @@ func (ch *chatChannelAPI) handleIncoming(ctx context.Context, channel, extID, te
 		}, nil
 	}
 
+	staff := ch.staffMode(ctx, id) // before this message can change the score
 	kw, err := ch.leads.loadKeywords(ctx)
 	if err != nil {
 		return chatIncomingResult{}, err
@@ -137,6 +141,13 @@ func (ch *chatChannelAPI) handleIncoming(ctx context.Context, channel, extID, te
 		if err := ch.leads.pool.QueryRow(ctx, `SELECT score, level FROM leads WHERE id=$1`, id).Scan(&out.Score, &out.Level); err != nil {
 			return chatIncomingResult{}, err
 		}
+	}
+	if staff { // a person handles this customer: keep the text for them and let the bot stay quiet
+		if err := ch.saveCustomerMessage(ctx, id, text); err != nil {
+			return chatIncomingResult{}, err
+		}
+		out.StaffMode = true
+		return out, nil
 	}
 	product, err := ch.loadProduct(ctx, id)
 	if err != nil {

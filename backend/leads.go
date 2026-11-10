@@ -293,7 +293,8 @@ func (a *leadAPI) createLead(c *fiber.Ctx) error {
 
 func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 	rows, err := a.pool.Query(c.Context(), `
-		SELECT id, campaign_id, display_name, channel, budget::float8, status, score, level, consent_marketing, created_at
+		SELECT id, campaign_id, display_name, channel, budget::float8, status, score, level, consent_marketing, created_at,
+		  (SELECT count(*) FROM customer_messages m WHERE m.lead_id = leads.id AND m.seen_at IS NULL)
 		FROM leads WHERE anonymized_at IS NULL
 		  AND ($1 = '' OR status = $1) AND ($2 = '' OR level = $2) AND ($3 = '' OR channel = $3)
 		ORDER BY score DESC, id DESC LIMIT 200`,
@@ -311,12 +312,13 @@ func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 		var budget *float64
 		var consentM bool
 		var created time.Time
-		if err := rows.Scan(&id, &campaign, &name, &channel, &budget, &status, &score, &level, &consentM, &created); err != nil {
+		var unread int64
+		if err := rows.Scan(&id, &campaign, &name, &channel, &budget, &status, &score, &level, &consentM, &created, &unread); err != nil {
 			return serverError(c, err)
 		}
 		out = append(out, fiber.Map{"id": id, "campaign_id": campaign, "display_name": name, "channel": channel,
 			"budget": budget, "status": status, "score": score, "level": level,
-			"consent_marketing": consentM, "created_at": created})
+			"consent_marketing": consentM, "created_at": created, "unread_messages": unread})
 	}
 	return c.JSON(out)
 }
@@ -617,6 +619,9 @@ func (a *leadAPI) anonymizeLead(c *fiber.Ctx) error {
 		return leadErr(c, 404, "lead not found")
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM lead_events WHERE lead_id=$1`, id); err != nil {
+		return serverError(c, err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM staff_replies WHERE lead_id=$1`, id); err != nil {
 		return serverError(c, err)
 	}
 	if err := tx.Commit(ctx); err != nil {

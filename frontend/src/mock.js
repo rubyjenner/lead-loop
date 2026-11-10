@@ -47,6 +47,10 @@ let campaigns = [
 
 let leadSeq = 20
 const chatMap = {}
+const staffReplies = [] // {id, key, lead_id, body, sent_by, created_at}
+const customerMsgs = [] // {id, lead_id, body, seen, created_at}
+let custSeq = 0
+let replySeq = 0
 const leads = [
   { id: 1, display_name: 'ลูกค้าทดสอบ 001', channel: 'mock', budget: 12900, status: 'qualified', score: 70, level: 'hot', consent_general: true, consent_marketing: true, created_at: ago(60 * 5), score_breakdown: [{ rule: 'ขอคุยกับเจ้าหน้าที่', points: 30 }, { rule: 'สอบถามราคา', points: 10 }, { rule: 'ทักขอรายละเอียด', points: 10 }, { rule: 'งบเพียงพอกับราคาสินค้า', points: 20 }] },
   { id: 2, display_name: 'ลูกค้าทดสอบ 002', channel: 'mock', budget: 9000, status: 'nurturing', score: 35, level: 'warm', consent_general: true, consent_marketing: true, created_at: ago(60 * 26), score_breakdown: [{ rule: 'สอบถามราคา', points: 10 }, { rule: 'ถามผ่อน', points: 15 }, { rule: 'ทักขอรายละเอียด', points: 10 }] },
@@ -65,7 +69,8 @@ let rules = [
   { id: 8, name: 'ไม่ตอบ 3 วัน', description: '', category: 'negative', is_core: false, condition: { event: 'no_reply_3d' }, points: -10, mode: 'once', max_total: null, active: false },
 ]
 const settings = { handoff_threshold: 50, level_warm_min: 25, score_min: 0, score_max: 100, followup_cold: { every_days: 7, max: 2 }, followup_warm: { every_days: 3, max: 3 } }
-const KW = { asked_details: ['รายละเอียด', 'สนใจ'], asked_price: ['ราคา', 'เท่าไหร่'], requested_human: ['คุยกับเจ้าหน้าที่'], requested_callback: ['โทรกลับ', 'ติดต่อกลับ'], asked_installment: ['ผ่อน'], unsubscribed: ['เลิกรับ'] }
+const KW = { asked_details: ['รายละเอียด', 'สนใจ'], asked_price: ['ราคา', 'เท่าไหร่'], requested_human: ['คุยกับเจ้าหน้าที่'], requested_callback: ['โทรกลับ', 'ติดต่อกลับ'], asked_installment: ['ผ่อน'], asked_variant: ['รุ่น', 'ขนาด', 'สีอะไร'], asked_type: ['แบบไหน', 'ประเภท'], asked_warranty: ['ประกัน', 'หลังการขาย'], asked_payment: ['ชำระ', 'โอน', 'บัตรเครดิต'], ready_to_buy: ['เอาเลย', 'สั่งซื้อ', 'ซื้อเลย'], unsubscribed: ['เลิกรับ'] }
+const productFacts = { 1: { variants: 'สีดำ ขาว', product_type: 'หูฟังบลูทูธแบบ in-ear', after_sales: 'รับประกัน 1 ปี', payment_methods: 'โอนพร้อมเพย์ บัตรเครดิต', installment_info: '' } }
 const RULE_OF = { asked_details: 1, requested_human: 2, asked_price: 3, requested_callback: 4, asked_installment: 5 }
 const level = (sc) => (sc >= 50 ? 'hot' : sc >= 25 ? 'warm' : 'cold')
 
@@ -90,6 +95,10 @@ export async function mockRequest(method, path, body, token) {
     return ok({ status: 'password set, you can log in now' })
   }
   if (path.startsWith('/public/shop')) return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', description: 'แบตอึด 30 ชั่วโมง ตัดเสียงรบกวน', product_price: 2490, image_url: 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22480%22 height=%22240%22><rect width=%22480%22 height=%22240%22 fill=%22%23cfe3e6%22/><text x=%22240%22 y=%22130%22 font-size=%2228%22 text-anchor=%22middle%22 fill=%22%23275%22>รูปสินค้า (ตัวอย่าง)</text></svg>', posts: ['หูฟังไร้สาย Aria เปิดตัววันนี้ แบตอึด 30 ชั่วโมง ราคา 2,490 บาท ทักแชตสอบถามได้เลยค่ะ'] })
+  if (path.startsWith('/public/chat/replies')) {
+    const sid = new URLSearchParams(path.split('?')[1]).get('session_id'); const after = Number(new URLSearchParams(path.split('?')[1]).get('after')) || 0
+    return ok({ replies: staffReplies.filter((r) => r.key === 'pub-' + sid && r.id > after) })
+  }
   if (path.startsWith('/public/chat/')) {
     if (method === 'GET') return ok({ enabled: true, campaign_name: 'เปิดตัวหูฟังไร้สาย Aria', product_name: 'หูฟังไร้สาย Aria', product_price: 2490 })
     const sid = body?.session_id; const key = 'pub-' + sid
@@ -141,6 +150,11 @@ export async function mockRequest(method, path, body, token) {
     const p = { id: products.length + 1, name: body.name, description: body.description || '', price: body.price ?? null, brand_info: body.brand_info || '', created_at: new Date().toISOString() }
     products.push(p); return ok(p, 201)
   }
+  if (method === 'GET' && path === '/product-facts') return ok(products.map((p) => ({ id: p.id, variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '', ...(productFacts[p.id] || {}) })))
+  m = path.match(/^\/product-facts\/(\d+)$/)
+  if (method === 'PUT' && m) { productFacts[+m[1]] = { variants: body.variants || '', product_type: body.product_type || '', after_sales: body.after_sales || '', payment_methods: body.payment_methods || '', installment_info: body.installment_info || '' }; return ok({ id: +m[1], ...productFacts[+m[1]] }) }
+  m = path.match(/^\/products\/(\d+)\/image$/)
+  if (method === 'POST' && m) return ok({ image_url: '' }, 201)
   if (method === 'POST' && path === '/campaigns') {
     const c = { id: campaigns.length + 1, product_id: body.product_id ?? null, name: body.name, goal: body.goal || '', target_audience: body.target_audience || '', budget: body.budget || 0, status: 'draft', created_at: new Date().toISOString(), plan: '', plan_generated_by: '' }
     campaigns.unshift(c); return ok(c, 201)
@@ -186,7 +200,7 @@ export async function mockRequest(method, path, body, token) {
   }
 
   if (method === 'GET' && path === '/inbox') {
-    return ok({ leads_ready: leads.filter((l) => l.status === 'qualified').length, leads_ready_oldest: ago(60 * 5), contents_to_approve: contents.filter((c) => c.status === 'pending_approval' && c.created_by !== 'admin@example.com').length, followups_to_approve: followups.filter((f) => f.status === 'pending_approval').length })
+    return ok({ leads_ready: leads.filter((l) => l.status === 'qualified').length, leads_ready_oldest: ago(60 * 5), contents_to_approve: contents.filter((c) => c.status === 'pending_approval' && c.created_by !== 'admin@example.com').length, followups_to_approve: followups.filter((f) => f.status === 'pending_approval').length, messages_unread: new Set(customerMsgs.filter((x) => !x.seen).map((x) => x.lead_id)).size })
   }
   if (path.startsWith('/channels/mock/')) {
     const ext = body?.external_id
@@ -201,6 +215,12 @@ export async function mockRequest(method, path, body, token) {
     if (path === '/channels/mock/messages' && method === 'POST') {
       const l = leads.find((x) => x.id === chatMap[ext])
       if (!l) return ok({ needs_consent: true, consent_version: 'v1', reply: 'ก่อนคุยต่อ ขอความยินยอมให้ร้านเก็บและใช้ข้อมูลการสนทนาเพื่อตอบคำถามและติดต่อกลับ คุณสามารถถอนความยินยอมได้ทุกเมื่อ กด "ยอมรับ" เพื่อเริ่มคุยค่ะ', detected: [], score: 0, level: 'cold', qualified: false })
+      const staffMode = ['qualified', 'handed_off'].includes(l.status) || (!['closed', 'lost'].includes(l.status) && staffReplies.some((r) => r.lead_id === l.id))
+      if (staffMode) { // a person handles this customer: keep the text for them, the bot stays quiet
+        customerMsgs.push({ id: ++custSeq, lead_id: l.id, body: String(body.text || '').trim(), seen: false, created_at: new Date().toISOString() })
+        l.unread_messages = customerMsgs.filter((x) => x.lead_id === l.id && !x.seen).length
+        return ok({ lead_id: l.id, reply: '', staff_mode: true, detected: [], score: l.score, level: l.level, qualified: true, immediate_handoff: false })
+      }
       const detected = Object.keys(KW).filter((e) => KW[e].some((w) => (body.text || '').includes(w)))
       if (detected.includes('unsubscribed')) l.consent_marketing = false
       detected.forEach((e) => {
@@ -213,7 +233,12 @@ export async function mockRequest(method, path, body, token) {
       let reply = 'ขอบคุณที่ทักมาค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย'
       if (detected.includes('asked_price')) reply = 'หูฟังไร้สาย Aria ราคา 2,490 บาทค่ะ'
       if (detected.includes('asked_details')) reply = 'รายละเอียด: แบตอึด 30 ชั่วโมง ตัดเสียงรบกวนค่ะ'
-      if (detected.includes('asked_installment')) reply = 'เรื่องผ่อนชำระ ขอให้ทีมงานตอบโดยตรงนะคะ'
+      const F = productFacts[1] || {}
+      const fact = (e, label, v, topic) => { if (detected.includes(e)) reply = v ? `${label}: ${v}` : `เรื่อง${topic} ขอให้ทีมงานตอบให้โดยตรงนะคะ` }
+      fact('asked_variant', 'รุ่น/ขนาด/สี', F.variants, 'รุ่น ขนาด และสี'); fact('asked_type', 'แบบสินค้า', F.product_type, 'แบบสินค้า')
+      fact('asked_warranty', 'บริการหลังการขาย', F.after_sales, 'บริการหลังการขาย'); fact('asked_payment', 'ชำระเงินได้ด้วย', F.payment_methods, 'ช่องทางชำระเงิน')
+      fact('asked_installment', 'การผ่อนชำระ', F.installment_info, 'การผ่อนชำระ')
+      if (detected.includes('ready_to_buy')) reply = 'ส่งเรื่องให้ทีมงานยืนยันการสั่งซื้อให้นะคะ จะมีเจ้าหน้าที่ติดต่อกลับค่ะ'
       if (detected.includes('requested_human') || detected.includes('requested_callback')) reply = 'ส่งเรื่องให้ทีมงานแล้วค่ะ จะติดต่อกลับโดยเร็ว'
       if (detected.includes('unsubscribed')) reply = 'รับทราบค่ะ จะไม่ส่งข่าวสารอีก'
       return ok({ lead_id: l.id, reply, detected, score: l.score, level: l.level, qualified: l.score >= 50, immediate_handoff: false })
@@ -243,6 +268,26 @@ export async function mockRequest(method, path, body, token) {
       if (i < 0) return err(404, 'lead not found')
       if (method === 'GET') return ok(leads[i])
       if (method === 'DELETE') { leads.splice(i, 1); return ok({ ok: true }) }
+    }
+    mm = path.match(/^\/leads\/(\d+)\/thread$/)
+    if (mm && method === 'GET') {
+      const lid = +mm[1]
+      const rows = [...customerMsgs.filter((x) => x.lead_id === lid).map((x) => ({ id: x.id, dir: 'in', body: x.body, created_at: x.created_at })),
+        ...staffReplies.filter((x) => x.lead_id === lid).map((x) => ({ id: x.id, dir: 'out', body: x.body, sent_by: x.sent_by, created_at: x.created_at }))]
+      customerMsgs.forEach((x) => { if (x.lead_id === lid) x.seen = true })
+      const lead = leads.find((x) => x.id === lid); if (lead) lead.unread_messages = 0
+      return ok(rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))))
+    }
+    mm = path.match(/^\/leads\/(\d+)\/(reply|replies)$/)
+    if (mm) {
+      const l = leads.find((x) => x.id === +mm[1]); if (!l) return err(404, 'lead not found')
+      if (method === 'GET') return ok(staffReplies.filter((r) => r.lead_id === l.id).sort((a, b) => b.id - a.id))
+      if (!l.consent_general) return err(409, 'ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้')
+      if (l.channel !== 'web' && l.channel !== 'line') return err(409, 'ตอบได้เฉพาะลีดจากแชตหน้าเว็บหรือ LINE')
+      const key = Object.keys(chatMap).find((k) => chatMap[k] === l.id)
+      const r = { id: ++replySeq, key, lead_id: l.id, body: String(body?.body || '').trim(), sent_by: 'admin@example.com', created_at: new Date().toISOString() }
+      if (!r.body) return err(400, 'ข้อความต้องไม่ว่าง')
+      staffReplies.push(r); return ok(r, 201)
     }
     mm = path.match(/^\/leads\/(\d+)\/(message|status|consent)$/)
     if (mm && method === 'POST') {

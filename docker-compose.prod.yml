@@ -48,6 +48,9 @@ services:
       PUBLIC_CHAT_MAX_LEADS_PER_HOUR: ${PUBLIC_CHAT_MAX_LEADS_PER_HOUR:-100}
       PRIVACY_POLICY_URL: ${PRIVACY_POLICY_URL:-}
       PDPA_RETENTION_TEXT: ${PDPA_RETENTION_TEXT:-}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_CAMPAIGN_ID: ${LINE_CAMPAIGN_ID:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env (the public address, e.g. https://leadloop.example.com)}
       # The API is reachable only through Caddy, so it is safe to trust the client address Caddy puts here.

@@ -12,6 +12,9 @@ function newSid() {
   try { crypto.getRandomValues(a) } catch { for (let i = 0; i < 16; i++) a[i] = Math.floor(Math.random() * 256) }
   return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('')
 }
+const okKey = (sid) => `leadloop.chat.ok.${sid}`
+function wasConsented(sid) { try { return sessionStorage.getItem(okKey(sid)) === '1' } catch { return false } }
+function markConsented(sid, on) { try { if (on) sessionStorage.setItem(okKey(sid), '1'); else sessionStorage.removeItem(okKey(sid)) } catch { /* private window */ } }
 function loadSid() {
   try { let s = sessionStorage.getItem(SID_KEY); if (!s) { s = newSid(); sessionStorage.setItem(SID_KEY, s) } return s } catch { return newSid() }
 }
@@ -30,11 +33,27 @@ export default function PublicChat() {
   const [error, setError] = useState('')
   const [ended, setEnded] = useState(false)
   const end = useRef(null)
+  const [talking, setTalking] = useState(() => wasConsented(loadSid())) // true once the customer has accepted consent in this page
+  const lastReply = useRef(0)
 
   useEffect(() => {
     api('GET', campaignId ? `/public/shop?campaign_id=${campaignId}` : '/public/chat/info').then(setInfo).catch(() => setInfo({ enabled: false }))
   }, [campaignId])
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [log, pending])
+  // after consent, look for answers written by the team every 5 seconds
+  useEffect(() => {
+    if (!talking || ended) return undefined
+    let stop = false
+    const tick = async () => {
+      try {
+        const r = await api('GET', `/public/chat/replies?session_id=${sid}&after=${lastReply.current}`)
+        if (stop) return
+        for (const x of r.replies || []) { lastReply.current = Math.max(lastReply.current, x.id); setLog((l) => [...l, { from: 'staff', text: x.body }]) }
+      } catch { /* try again next time */ }
+    }
+    const t = setInterval(tick, 5000)
+    return () => { stop = true; clearInterval(t) }
+  }, [talking, ended, sid])
 
   const push = (m) => setLog((l) => [...l, m])
 
@@ -45,8 +64,11 @@ export default function PublicChat() {
     push({ from: 'cust', text: msg })
     try {
       const r = await api('POST', '/public/chat/messages', { session_id: sid, text: msg })
-      push({ from: 'bot', text: r.reply })
+      if (r.staff_mode) push({ from: 'sys', text: 'ส่งข้อความถึงเจ้าหน้าที่แล้ว กรุณารอการตอบกลับในหน้านี้ค่ะ' })
+      else push({ from: 'bot', text: r.reply })
       setPending(r.needs_consent ? msg : null)
+      if (!r.needs_consent) { setTalking(true); markConsented(sid, true) }
+      else { setTalking(false); markConsented(sid, false) }
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
@@ -58,6 +80,7 @@ export default function PublicChat() {
       const r = await api('POST', '/public/chat/consent', body)
       push({ from: 'cust', text: marketing ? 'ยินยอม (รวมรับข่าวสารและโปรโมชัน)' : 'ยินยอม' })
       push({ from: 'bot', text: r.reply })
+      setTalking(true); markConsented(sid, true)
       const again = pending; setPending(null); setBusy(false)
       if (again) await send(again)
     } catch (e) { setError(e.message); setBusy(false) }
@@ -74,13 +97,14 @@ export default function PublicChat() {
     setBusy(true); setError('')
     try {
       const r = await api('POST', '/public/chat/withdraw', { session_id: sid })
-      push({ from: 'bot', text: r.reply }); setPending(null)
+      push({ from: 'bot', text: r.reply }); setPending(null); setTalking(false); markConsented(sid, false)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
   function restart() {
     const s = newSid()
     try { sessionStorage.setItem(SID_KEY, s) } catch { /* private window */ }
+    lastReply.current = 0; setTalking(false)
     setSid(s); setPending(null); setMarketing(false); setEnded(false); setError('')
     setLog([{ from: 'bot', text: 'เริ่มบทสนทนาใหม่ในฐานะลูกค้าคนใหม่ค่ะ' }])
   }
@@ -100,7 +124,7 @@ export default function PublicChat() {
         {(info.posts || []).map((t, i) => <div key={i} className="shop-post">{t}</div>)}
         <div className="alert alert-info small">ระบบทดลองของทีมพัฒนา ใช้ชื่อสมมติเท่านั้น ห้ามกรอกข้อมูลส่วนตัวจริง</div>
         <div className="chat-log" aria-live="polite">
-          {log.map((m, i) => <div key={i} className={`bubble bubble-${m.from}`}>{m.text}</div>)}
+          {log.map((m, i) => <div key={i} className={`bubble bubble-${m.from}`}>{m.from === 'staff' && <b className="staff-name">เจ้าหน้าที่ </b>}{m.text}</div>)}
           {pending && (
             <div className="consent-card">
               <b>ขอความยินยอมก่อนคุยต่อ</b>

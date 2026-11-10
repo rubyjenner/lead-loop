@@ -129,6 +129,7 @@ export const EVENTS = {
   asked_details: 'ทักขอรายละเอียด', requested_human: 'ขอคุยกับเจ้าหน้าที่', asked_price: 'สอบถามราคา', requested_callback: 'ให้ติดต่อกลับ',
   asked_condition: 'ถามสภาพ/แบตเตอรี่', asked_installment: 'ถามผ่อน', asked_shipping: 'ถามการจัดส่ง', asked_negotiate: 'ต่อรองราคา',
   requested_visit: 'ขอนัดดูเครื่อง', gave_budget: 'ระบุงบ', replied_fast: 'ตอบกลับเร็ว', returned_after_1d: 'กลับมาคุยหลังหาย 1 วัน',
+  asked_variant: 'ถามรุ่น/ขนาด/สี', asked_type: 'ถามแบบสินค้า', asked_warranty: 'ถามบริการหลังการขาย', asked_payment: 'ถามช่องทางชำระเงิน', ready_to_buy: 'พร้อมสั่งซื้อ',
   no_reply_3d: 'ไม่ตอบ 3 วัน', inactive_7d: 'ไม่มีความเคลื่อนไหว 7 วัน', unsubscribed: 'ขอเลิกรับข่าวสาร',
 }
 export const eventLabel = (k) => EVENTS[k] || k
