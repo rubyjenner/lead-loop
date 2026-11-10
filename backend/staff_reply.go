@@ -37,7 +37,26 @@ func initStaffReplies(ctx context.Context, pool *pgxpool.Pool) error {
 		sent_by TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	);
-	CREATE INDEX IF NOT EXISTS staff_replies_lead_idx ON staff_replies(lead_id, id)`)
+	CREATE INDEX IF NOT EXISTS staff_replies_lead_idx ON staff_replies(lead_id, id);
+	CREATE TABLE IF NOT EXISTS customer_messages (
+		id BIGSERIAL PRIMARY KEY,
+		lead_id BIGINT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+		body TEXT NOT NULL,
+		seen_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	);
+	CREATE INDEX IF NOT EXISTS customer_messages_lead_idx ON customer_messages(lead_id, id);
+	CREATE OR REPLACE FUNCTION purge_lead_messages() RETURNS trigger AS $$
+	BEGIN
+		DELETE FROM customer_messages WHERE lead_id = NEW.id;
+		DELETE FROM staff_replies WHERE lead_id = NEW.id;
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DROP TRIGGER IF EXISTS leads_purge_messages ON leads;
+	CREATE TRIGGER leads_purge_messages AFTER UPDATE ON leads
+		FOR EACH ROW WHEN (NEW.consent_general = FALSE OR NEW.anonymized_at IS NOT NULL)
+		EXECUTE FUNCTION purge_lead_messages()`)
 	return err
 }
 
@@ -130,12 +149,19 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		}
 		return c.JSON(list)
 	})
+
+	registerThreadRoute(app, pool)
+	registerProductFactsRoutes(app, pool)
+	registerProductImageUpload(app, pool) // needs login too, kept here so main.go needs no new line
 }
 
 // GET /public/chat/replies?session_id=...&after=12 -> replies newer than id 12 for this customer's own lead
 func registerStaffReplyPublic(app fiber.Router, pool *pgxpool.Pool) {
 	if err := initStaffReplies(context.Background(), pool); err != nil {
 		panic("staff_replies schema: " + err.Error())
+	}
+	if err := initProductFacts(context.Background(), pool); err != nil {
+		panic("product facts schema: " + err.Error())
 	}
 	pollLimit := limiter.New(limiter.Config{Max: 60, Expiration: time.Minute, LimitReached: func(c *fiber.Ctx) error {
 		return c.Status(429).JSON(fiber.Map{"error": "too many requests"})

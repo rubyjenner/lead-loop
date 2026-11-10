@@ -8,6 +8,7 @@ export default function Campaigns() {
   const { user } = useAuth()
   const [list, setList] = useState(null)
   const [products, setProducts] = useState([])
+  const [editing, setEditing] = useState(null) // product whose facts are being edited
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null) // 'campaign' | 'product'
   const [toast, setToast] = useState('')
@@ -15,8 +16,8 @@ export default function Campaigns() {
 
   const load = useCallback(async () => {
     try {
-      const [c, p] = await Promise.all([api('GET', '/campaigns'), api('GET', '/products')])
-      setList(c); setProducts(p); setError('')
+      const [c, p, facts] = await Promise.all([api('GET', '/campaigns'), api('GET', '/products'), api('GET', '/product-facts').catch(() => [])])
+      setList(c); setProducts(p.map((x) => ({ ...x, ...(facts.find((f) => f.id === x.id) || {}) }))); setError('')
     } catch (e) { setError(e.message) }
   }, [])
   useEffect(() => { load() }, [load])
@@ -59,6 +60,31 @@ export default function Campaigns() {
           </table>
         </div>
       )}
+      {products.length > 0 && (
+        <section className="panel" style={{ marginTop: 18 }}>
+          <h2>สินค้าและข้อมูลที่บอตตอบลูกค้าได้</h2>
+          <p className="muted small">บอตตอบลูกค้าจากข้อมูลที่กรอกไว้เท่านั้น ช่องไหนว่าง บอตจะส่งคำถามนั้นให้เจ้าหน้าที่ตอบ ไม่เดาเอง</p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>สินค้า</th><th className="right">ราคา</th><th>ข้อมูลครบ</th><th></th></tr></thead>
+              <tbody>
+                {products.map((p) => {
+                  const n = factCount(p)
+                  return (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td className="right nowrap">{p.price != null ? baht(p.price) : <span className="muted">-</span>}</td>
+                      <td><span className={`tag ${n === FACT_TOTAL ? 'tag-l-closed' : 'tag-l-new'}`}>{n}/{FACT_TOTAL}</span></td>
+                      <td className="right">{canEdit && <button className="btn btn-quiet" onClick={() => setEditing(p)}>แก้ข้อมูลสินค้า</button>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {editing && <FactsModal product={editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); setToast('บันทึกข้อมูลสินค้าแล้ว') }} />}
       {modal === 'campaign' && (
         <CampaignModal products={products} onClose={() => setModal(null)} onAddProduct={() => setModal('product')}
           onCreated={() => { setModal(null); load() }} />
@@ -113,8 +139,60 @@ function CampaignModal({ products, onClose, onCreated, onAddProduct }) {
   )
 }
 
+const FACT_FIELDS = [
+  ['variants', 'รุ่น / ขนาด / สี', 'เช่น ไซส์ S M L, สีขาว ดำ'],
+  ['product_type', 'แบบสินค้า', 'เช่น คอกลม แขนสั้น'],
+  ['after_sales', 'บริการหลังการขาย', 'เช่น รับประกัน 1 ปี เปลี่ยนไซส์ได้ใน 7 วัน'],
+  ['payment_methods', 'ชำระเงินได้ด้วยอะไรบ้าง', 'เช่น โอนผ่านพร้อมเพย์ บัตรเครดิต เก็บเงินปลายทาง'],
+  ['installment_info', 'ผ่อนได้ไหม', 'เช่น ผ่อน 0% 3 เดือนผ่านบัตรเครดิต หรือ ไม่รับผ่อน'],
+]
+const FACT_TOTAL = FACT_FIELDS.length + 1 // + price
+const factCount = (p) => FACT_FIELDS.filter(([k]) => (p[k] || '').trim()).length + (p.price != null && p.price !== '' ? 1 : 0)
+
+function FactsFields({ f, set }) {
+  return FACT_FIELDS.map(([k, label, ph]) => (
+    <label className="field" key={k}><span>{label}</span>
+      <textarea rows="2" maxLength={500} value={f[k] || ''} onChange={set(k)} placeholder={ph} /></label>
+  ))
+}
+
+function FactsModal({ product, onClose, onSaved }) {
+  const [f, setF] = useState(() => Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])))
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  async function submit(e) {
+    e.preventDefault()
+    setError(''); setBusy(true)
+    try { await api('PUT', `/product-facts/${product.id}`, f); onSaved() } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={`ข้อมูลสินค้า: ${product.name}`} onClose={onClose}>
+      <form className="form" onSubmit={submit} noValidate>
+        {error && <div className="alert alert-error" role="alert">{error}</div>}
+        <p className="muted small">ใส่เฉพาะข้อมูลจริง บอตจะตอบลูกค้าตามข้อความนี้ตรง ๆ ช่องที่เว้นว่างบอตจะส่งต่อให้เจ้าหน้าที่ตอบ ราคาและรายละเอียดแก้ตอนเพิ่มสินค้า</p>
+        <FactsFields f={f} set={set} />
+        <div className="modal-foot">
+          <button type="button" className="btn btn-quiet" onClick={onClose}>ยกเลิก</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function readAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'))
+    r.readAsDataURL(file)
+  })
+}
+
 function ProductModal({ onClose, onCreated }) {
-  const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '', image_url: '' })
+  const [f, setF] = useState({ name: '', description: '', price: '', brand_info: '', image_url: '', variants: '', product_type: '', after_sales: '', payment_methods: '', installment_info: '' })
+  const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -124,8 +202,16 @@ function ProductModal({ onClose, onCreated }) {
     try {
       const body = { name: f.name.trim(), description: f.description.trim(), brand_info: f.brand_info.trim() }
       if (f.price !== '') body.price = Number(f.price)
-      if (f.image_url.trim()) body.image_url = f.image_url.trim()
-      await api('POST', '/products', body)
+      if (f.image_url.trim() && !file) body.image_url = f.image_url.trim()
+      const created = await api('POST', '/products', body)
+      if (file && created?.id) {
+        try { await api('POST', `/products/${created.id}/image`, { data_url: await readAsDataURL(file) }) }
+        catch (err2) { setError(`เพิ่มสินค้าแล้ว แต่อัปโหลดรูปไม่สำเร็จ: ${err2.message}`); return }
+      }
+      if (created?.id && FACT_FIELDS.some(([k]) => f[k].trim())) {
+        try { await api('PUT', `/product-facts/${created.id}`, Object.fromEntries(FACT_FIELDS.map(([k]) => [k, f[k]]))) }
+        catch (err3) { setError(`เพิ่มสินค้าแล้ว แต่บันทึกข้อมูลสินค้าไม่สำเร็จ: ${err3.message} (แก้ภายหลังได้ที่ปุ่ม "แก้ข้อมูลสินค้า")`); return }
+      }
       onCreated()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -137,8 +223,17 @@ function ProductModal({ onClose, onCreated }) {
         <label className="field"><span>รายละเอียด</span><textarea rows="3" value={f.description} onChange={set('description')} />
           <small>ใส่เฉพาะข้อมูลจริง เช่น สภาพ ขนาด การรับประกัน คำตอบของแชตและคอนเทนต์ที่ AI เขียนจะอ้างจากข้อมูลนี้</small></label>
         <label className="field"><span>ราคา (บาท)</span><input type="number" min="0" value={f.price} onChange={set('price')} /></label>
-        <label className="field"><span>ลิงก์รูปสินค้า (ถ้ามี)</span><input type="url" placeholder="https://…" value={f.image_url} onChange={set('image_url')} />
+        <label className="field"><span>อัปโหลดรูปสินค้า (png, jpeg, webp ไม่เกิน 2 MB)</span>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+            const x = e.target.files?.[0] || null
+            if (x && x.size > 2 * 1024 * 1024) { setError('รูปใหญ่เกิน 2 MB'); e.target.value = ''; setFile(null); return }
+            setError(''); setFile(x)
+          }} />
+          <small>ใช้รูปที่เป็นของร้านเอง ห้ามมีรูปหน้าหรือข้อมูลส่วนตัวของลูกค้า รูปจะแสดงบนหน้าร้านสาธารณะ และไม่ถูกส่งให้ AI</small></label>
+        <label className="field"><span>หรือใส่ลิงก์รูปสินค้า (ถ้ามี)</span><input type="url" placeholder="https://…" value={f.image_url} onChange={set('image_url')} />
           <small>ใช้ลิงก์รูปที่เป็นของร้านเอง รูปจะแสดงบนหน้าร้านสาธารณะ</small></label>
+        <h3 style={{ margin: '14px 0 2px' }}>ข้อมูลที่บอตใช้ตอบลูกค้า (ไม่บังคับ)</h3>
+        <FactsFields f={f} set={set} />
         <label className="field"><span>ข้อมูลแบรนด์ (ถ้ามี)</span><input value={f.brand_info} onChange={set('brand_info')} /></label>
         <div className="modal-foot">
           <button type="button" className="btn btn-quiet" onClick={onClose}>ย้อนกลับ</button>

@@ -64,7 +64,8 @@ export default function PublicChat() {
     push({ from: 'cust', text: msg })
     try {
       const r = await api('POST', '/public/chat/messages', { session_id: sid, text: msg })
-      push({ from: 'bot', text: r.reply })
+      if (r.staff_mode) push({ from: 'sys', text: 'ส่งข้อความถึงเจ้าหน้าที่แล้ว กรุณารอการตอบกลับในหน้านี้ค่ะ' })
+      else push({ from: 'bot', text: r.reply })
       setPending(r.needs_consent ? msg : null)
       if (!r.needs_consent) { setTalking(true); markConsented(sid, true) }
       else { setTalking(false); markConsented(sid, false) }

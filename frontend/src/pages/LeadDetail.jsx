@@ -14,17 +14,21 @@ export default function LeadDetail() {
   const [text, setText] = useState('')
   const [toast, setToast] = useState('')
   const [busy, setBusy] = useState(false)
-  const [replies, setReplies] = useState([])
+  const [thread, setThread] = useState([])
   const [replyText, setReplyText] = useState('')
 
   const load = useCallback(async () => {
     try { setLead(await api('GET', `/leads/${id}`)); setError('') } catch (e) { setError(e.message) }
   }, [id])
   useEffect(() => { load() }, [load])
-  const loadReplies = useCallback(async () => {
-    try { setReplies(await api('GET', `/leads/${id}/replies`)) } catch { /* the page still works without it */ }
+  const loadThread = useCallback(async () => {
+    try { setThread(await api('GET', `/leads/${id}/thread`)) } catch { /* the page still works without it */ }
   }, [id])
-  useEffect(() => { loadReplies() }, [loadReplies])
+  useEffect(() => {
+    loadThread()
+    const t = setInterval(loadThread, 5000) // new messages from the customer show up without reloading
+    return () => clearInterval(t)
+  }, [loadThread])
 
   async function run(fn, ok) {
     setBusy(true); setError('')
@@ -39,7 +43,7 @@ export default function LeadDetail() {
     e.preventDefault()
     const body = replyText.trim()
     if (!body) return
-    run(() => api('POST', `/leads/${id}/reply`, { body }), 'ส่งข้อความถึงลูกค้าแล้ว').then(() => { setReplyText(''); loadReplies() })
+    run(() => api('POST', `/leads/${id}/reply`, { body }), 'ส่งข้อความถึงลูกค้าแล้ว').then(() => { setReplyText(''); loadThread() })
   }
   const setStatus = (status) => run(() => api('POST', `/leads/${id}/status`, { status }), 'อัปเดตสถานะแล้ว')
   const consent = (kind, action) => run(() => api('POST', `/leads/${id}/consent`, { kind, action, text_version: 'mock-v1' }), 'บันทึกความยินยอมแล้ว')
@@ -118,13 +122,21 @@ export default function LeadDetail() {
         <section className="panel" style={{ marginTop: 16 }}>
           <h2>ตอบลูกค้า</h2>
           <p className="muted small">{lead.channel === 'line'
-            ? 'ข้อความจะถูกส่งเข้า LINE ของลูกค้าคนนี้ทันที (นับเป็นโควตาข้อความของบัญชี LINE) หลังตอบแล้วบอตจะหยุดตอบลูกค้าคนนี้ ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น'
+            ? 'ข้อความจะถูกส่งเข้า LINE ของลูกค้าคนนี้ทันที (นับเป็นโควตาข้อความของบัญชี LINE) ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น'
             : 'ข้อความจะไปแสดงในหน้าแชตของลูกค้าคนนี้ (ลูกค้ากำลังเปิดหน้าแชตอยู่ถึงจะเห็น) ห้ามใส่ข้อมูลส่วนตัวของผู้อื่น'}</p>
-          {replies.length > 0 && (
-            <ul className="bd">
-              {replies.map((r) => <li key={r.id}><span>{r.body}</span><span className="muted small">{r.sent_by} · {new Date(r.created_at).toLocaleString('th-TH')}</span></li>)}
-            </ul>
-          )}
+          <p className="muted small">เมื่อลีดเป็น "พร้อมส่งต่อ" หรือ "ส่งต่อเซลส์แล้ว" บอตจะหยุดตอบ และข้อความที่ลูกค้าพิมพ์ต่อจากนี้จะขึ้นที่นี่ จนกว่าจะกด "ปิดการขายได้" หรือ "ไม่สำเร็จ"</p>
+          {thread.length === 0
+            ? <p className="muted small">ยังไม่มีข้อความในบทสนทนานี้</p>
+            : (
+              <div className="thread" aria-live="polite">
+                {thread.map((m) => (
+                  <div key={`${m.dir}-${m.id}`} className={`thread-msg thread-${m.dir}`}>
+                    <span>{m.body}</span>
+                    <span className="muted small">{m.dir === 'in' ? 'ลูกค้า' : m.sent_by || 'เจ้าหน้าที่'} · {new Date(m.created_at).toLocaleString('th-TH')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           {canReply ? (
             <form className="form" onSubmit={sendReply}>
               <label className="field"><span>ข้อความถึงลูกค้า (ไม่เกิน 500 ตัวอักษร)</span>

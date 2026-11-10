@@ -57,7 +57,7 @@ export default function Leads() {
             <tbody>
               {shown.map((l) => (
                 <tr key={l.id}>
-                  <td><Link className="link" to={`/leads/${l.id}`}>{l.display_name}</Link></td>
+                  <td><Link className="link" to={`/leads/${l.id}`}>{l.display_name}</Link>{l.unread_messages > 0 && <span className="tag tag-l-qualified" style={{ marginLeft: 8 }}>ข้อความใหม่ {l.unread_messages}</span>}</td>
                   <td><ScoreCell score={l.score} /></td>
                   <td><LevelTag level={l.level} /></td>
                   <td><span className={`tag tag-l-${l.status}`}>{LEAD_STATUS[l.status] || l.status}</span></td>

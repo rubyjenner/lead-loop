@@ -40,12 +40,12 @@ function Shell() {
     let alive = true
     const load = () => api('GET', '/inbox').then((d) => alive && setInbox(d || {})).catch(() => {})
     load()
-    const t = setInterval(load, 60000)
+    const t = setInterval(load, 15000)
     return () => { alive = false; clearInterval(t) }
   }, [loc.pathname, user])
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />
   if (user.mustChange) return <Navigate to="/change-password" replace />
-  const badge = { '/approvals': inbox.contents_to_approve, '/followups': inbox.followups_to_approve, '/leads': inbox.leads_ready }
+  const badge = { '/approvals': inbox.contents_to_approve, '/followups': inbox.followups_to_approve, '/leads': (inbox.leads_ready || 0) + (inbox.messages_unread || 0) }
   const initials = (user.name || user.email).trim().slice(0, 1).toUpperCase()
   return (
     <div className="shell">

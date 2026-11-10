@@ -143,6 +143,26 @@ Check 'score increased' ([int]$d2.Json.score -gt $score1)
 Check 'lead level is Hot' ("$($d2.Json.level)" -match '(?i)hot')
 Write-Host ("      score {0} -> {1}, level {2}, status {3}" -f $score1, $d2.Json.score, $d2.Json.level, $d2.Json.status)
 
+# ---------------------------------------------------------------- staff mode (conversation with sales)
+Write-Host "`n== Staff mode: customer and sales talk until the sale is closed =="
+$m5 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ขอทราบเวลาเปิดร้านหน่อยครับ' }
+Check 'after hand-off the bot stays quiet (staff_mode, no bot reply)' ($m5.Status -eq 200 -and $m5.Json.staff_mode -eq $true -and -not $m5.Json.reply)
+$lst = @((Call 'GET' '/leads' $token $null).Json) | Where-Object { $_.id -eq $leadId } | Select-Object -First 1
+Check 'lead list shows unread customer message' ($null -ne $lst -and [int]$lst.unread_messages -ge 1)
+Check 'inbox counts leads with new messages' ([int](Call 'GET' '/inbox' $token $null).Json.messages_unread -ge 1)
+$th = @((Call 'GET' "/leads/$leadId/thread" $token $null).Json)
+Check 'sales sees the customer text in the thread' (@($th | Where-Object { $_.dir -eq 'in' -and $_.body -like '*เวลาเปิดร้าน*' }).Count -eq 1)
+$lst2 = @((Call 'GET' '/leads' $token $null).Json) | Where-Object { $_.id -eq $leadId } | Select-Object -First 1
+Check 'opening the thread marks messages as read' ([int]$lst2.unread_messages -eq 0)
+$rp = Call 'POST' "/leads/$leadId/reply" $token @{ body = 'ร้านเปิด 10:00-20:00 ทุกวันค่ะ' }
+Check 'sales replies (201)' ($rp.Status -eq 201)
+$m6 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = 'ขอบคุณครับ มีสีอื่นไหม' }
+Check 'second customer question also reaches sales' ($m6.Json.staff_mode -eq $true)
+$th2 = @((Call 'GET' "/leads/$leadId/thread" $token $null).Json)
+Check 'thread keeps both sides in order (customer, sales, customer)' ($th2.Count -eq 3 -and $th2[0].dir -eq 'in' -and $th2[1].dir -eq 'out' -and $th2[2].dir -eq 'in')
+$pub = Call 'GET' "/public/chat/replies?session_id=$sid&after=0" $null $null
+Check 'customer page gets the sales reply but never the customer texts' (@($pub.Json.replies).Count -eq 1 -and $pub.Text -notlike '*เวลาเปิดร้าน*')
+
 # ---------------------------------------------------------------- withdraw
 Write-Host "`n== Withdraw consent (PDPA) =="
 $wd = Call 'POST' '/public/chat/withdraw' $null @{ session_id = $sid }
@@ -151,8 +171,35 @@ $m4 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid; text = '�
 Check 'after withdraw -> asked for consent again' ($m4.Status -eq 200 -and $m4.Json.needs_consent -eq $true)
 $d3 = Call 'GET' "/leads/$leadId" $token $null
 Check 'back office shows consent_general = false' ($d3.Json.consent_general -eq $false)
+Check 'withdrawal deletes the stored conversation' (@((Call 'GET' "/leads/$leadId/thread" $token $null).Json).Count -eq 0)
 $wd2 = Call 'POST' '/public/chat/withdraw' $null @{ session_id = (NewSession) }
 Check 'withdraw for unknown session is harmless (200)' ($wd2.Status -eq 200)
+
+# ---------------------------------------------------------------- product facts and AI-assisted ordering
+Write-Host "`n== Product facts: the bot answers only from what marketing filled in =="
+$camp = Call 'GET' "/campaigns/$CampaignId" $token $null
+$pid = $camp.Json.product_id
+if (-not $pid) { Write-Host '      (campaign has no product: product-facts checks skipped)' -ForegroundColor Yellow }
+else {
+    $oldFacts = @((Call 'GET' '/product-facts' $token $null).Json) | Where-Object { $_.id -eq $pid } | Select-Object -First 1
+    $put = Call 'PUT' "/product-facts/$pid" $token @{ variants = 'ไซส์ S M L สีขาว ดำ'; product_type = 'คอกลม'; after_sales = ''; payment_methods = 'โอนพร้อมเพย์ บัตรเครดิต'; installment_info = 'ผ่อน 0% 3 เดือน' }
+    Check 'marketing saves product facts (200)' ($put.Status -eq 200 -and $put.Json.variants -like '*ไซส์*')
+    Check 'facts longer than 500 chars -> 400' ((Call 'PUT' "/product-facts/$pid" $token @{ variants = ('ก' * 501) }).Status -eq 400)
+    $sid2 = NewSession; $name2 = "Smoke Buy $(Get-Date -Format 'HHmmss')"
+    [void](Call 'POST' '/public/chat/consent' $null @{ session_id = $sid2; display_name = $name2; campaign_id = $CampaignId; consent_marketing = $false })
+    $q1 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'มีสีอะไรบ้างคะ' }
+    Check 'asks colours -> bot quotes the variants' ($q1.Json.reply -like '*ไซส์ S M L*')
+    $q2 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'รับบัตรเครดิตไหมคะ' }
+    Check 'asks payment -> bot quotes the payment methods' ($q2.Json.reply -like '*โอนพร้อมเพย์*')
+    $q3 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'มีประกันไหมครับ' }
+    Check 'after-sales left empty -> handed to staff, nothing invented' ($q3.Json.reply -like '*ทีมงานตอบให้โดยตรง*')
+    $q4 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'เอาเลยครับ สั่งซื้อยังไง' }
+    Check 'ready to buy -> bot hands the order to staff' ($q4.Json.reply -like '*ยืนยันการสั่งซื้อ*')
+    $mine2 = @((Call 'GET' '/leads?channel=web' $token $null).Json) | Where-Object { $_.display_name -eq $name2 } | Select-Object -First 1
+    Check 'ready to buy -> lead is ready for sales' ($null -ne $mine2 -and $mine2.status -eq 'qualified')
+    if ($mine2) { [void](Call 'DELETE' "/leads/$($mine2.id)" $token $null) }
+    if ($oldFacts) { [void](Call 'PUT' "/product-facts/$pid" $token @{ variants = $oldFacts.variants; product_type = $oldFacts.product_type; after_sales = $oldFacts.after_sales; payment_methods = $oldFacts.payment_methods; installment_info = $oldFacts.installment_info }) }
+}
 
 # ---------------------------------------------------------------- cleanup of the test lead
 Write-Host "`n== Cleanup =="

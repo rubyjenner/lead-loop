@@ -79,7 +79,7 @@ export default function ChatTest() {
         </div>
         <button className="btn btn-quiet" onClick={reset}>เริ่มลูกค้าคนใหม่</button>
       </header>
-      <div className="alert alert-info">ข้อมูลทดสอบเท่านั้น ห้ามใส่ชื่อหรือข้อมูลลูกค้าจริง ระบบไม่เก็บตัวข้อความ เก็บเฉพาะเหตุการณ์ที่จับได้</div>
+      <div className="alert alert-info">ข้อมูลทดสอบเท่านั้น ห้ามใส่ชื่อหรือข้อมูลลูกค้าจริง ก่อนส่งต่อเซลส์ระบบไม่เก็บตัวข้อความ เก็บเฉพาะเหตุการณ์ที่จับได้ หลังส่งต่อจะเก็บข้อความไว้ให้เจ้าหน้าที่อ่าน</div>
       <div className="chat-grid">
         <section className="chat">
           <div className="chat-setup">
