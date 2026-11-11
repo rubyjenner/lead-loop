@@ -64,20 +64,30 @@ func initDaily(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_lead_idx ON lead_followups(lead_id)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_status_idx ON lead_followups(status)`,
-		// When a customer withdraws consent (or is anonymized) every draft that has not reached them yet is rejected
-		// right away, so nothing waiting for approval, or approved but not yet sent, can ever be sent to them.
-		`CREATE OR REPLACE FUNCTION reject_followups_on_withdraw() RETURNS trigger AS $$
+		// PDPA: a draft must never outlive the customer's consent. When consent is withdrawn, marketing is switched
+		// off ("หยุด"), or the lead is anonymized, every draft that has not been SENT yet (waiting for approval, or
+		// approved but not yet picked up by a channel) is rejected on the spot. A trigger does it, so it holds for
+		// every way consent can change (chat, LINE, API, deletion) and for any sender added later.
+		`CREATE OR REPLACE FUNCTION lead_followups_cancel_on_consent() RETURNS trigger AS $$
 		BEGIN
-			UPDATE lead_followups SET status='rejected', decided_by='system:consent_withdrawn', decided_at=now()
-			WHERE lead_id = NEW.id AND (status='pending_approval' OR (status='approved' AND sent_at IS NULL));
-			RETURN NEW;
-		END
-		$$ LANGUAGE plpgsql`,
-		`DROP TRIGGER IF EXISTS leads_reject_followups ON leads`,
-		`CREATE TRIGGER leads_reject_followups AFTER UPDATE ON leads
-			FOR EACH ROW WHEN (NEW.consent_general = FALSE OR NEW.consent_marketing = FALSE
-				OR NEW.consent_withdrawn_at IS NOT NULL OR NEW.anonymized_at IS NOT NULL)
-			EXECUTE FUNCTION reject_followups_on_withdraw()`,
+		  UPDATE lead_followups SET status='rejected', decided_by='system:consent_withdrawn', decided_at=now()
+		   WHERE lead_id = NEW.id AND status IN ('pending_approval','approved') AND sent_at IS NULL;
+		  RETURN NULL;
+		END $$ LANGUAGE plpgsql`,
+		`DROP TRIGGER IF EXISTS lead_followups_cancel ON leads`,
+		`CREATE TRIGGER lead_followups_cancel AFTER UPDATE ON leads FOR EACH ROW
+		 WHEN ((NEW.consent_general IS DISTINCT FROM OLD.consent_general
+		     OR NEW.consent_marketing IS DISTINCT FROM OLD.consent_marketing
+		     OR NEW.consent_withdrawn_at IS DISTINCT FROM OLD.consent_withdrawn_at
+		     OR NEW.anonymized_at IS DISTINCT FROM OLD.anonymized_at)
+		   AND (NEW.consent_general IS NOT TRUE OR NEW.consent_marketing IS NOT TRUE
+		     OR NEW.consent_withdrawn_at IS NOT NULL OR NEW.anonymized_at IS NOT NULL))
+		 EXECUTE FUNCTION lead_followups_cancel_on_consent()`,
+		// drafts that already exist from before this trigger (or from a missed path) are cleaned once at start-up
+		`UPDATE lead_followups f SET status='rejected', decided_by='system:consent_withdrawn', decided_at=now()
+		  FROM leads l WHERE f.lead_id = l.id AND f.status IN ('pending_approval','approved') AND f.sent_at IS NULL
+		   AND (l.consent_general IS NOT TRUE OR l.consent_marketing IS NOT TRUE
+		     OR l.consent_withdrawn_at IS NOT NULL OR l.anonymized_at IS NOT NULL)`,
 	} {
 		if _, err := pool.Exec(ctx, s); err != nil {
 			return err
@@ -371,40 +381,36 @@ func (d *dailyAPI) decide(action string) fiber.Handler {
 			auditUser(c, d.pool, "followup_rejected", "followup:"+strconv.Itoa(id), "")
 			return c.JSON(fiber.Map{"status": "rejected"})
 		}
+		// ONE statement checks consent and approves, so a withdrawal that lands between a separate "check" and a
+		// separate "update" can never slip through. (If one still lands right after, the trigger cancels the
+		// approved draft because it has not been sent.) The mock chat is "sent" at once; a real channel picks up
+		// status='approved' and MUST send with the same kind of single statement: re-check consent while claiming.
 		var leadID int64
-		var channel string
-		var okConsent bool
+		var status string
 		err = d.pool.QueryRow(ctx, `
-			SELECT f.lead_id, l.channel,
-			       (l.consent_general AND l.consent_marketing AND l.consent_withdrawn_at IS NULL AND l.anonymized_at IS NULL)
-			FROM lead_followups f JOIN leads l ON l.id=f.lead_id
-			WHERE f.id=$1 AND f.status='pending_approval'`, id).Scan(&leadID, &channel, &okConsent)
+			UPDATE lead_followups f SET
+			  status = CASE WHEN l.channel = 'mock' THEN 'sent' ELSE 'approved' END,
+			  decided_by = $2, decided_at = now(),
+			  sent_at = CASE WHEN l.channel = 'mock' THEN now() END
+			FROM leads l
+			WHERE f.id = $1 AND f.status = 'pending_approval' AND l.id = f.lead_id
+			  AND l.consent_general AND l.consent_marketing AND l.consent_withdrawn_at IS NULL AND l.anonymized_at IS NULL
+			RETURNING f.status, f.lead_id`, id, email).Scan(&status, &leadID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return leadErr(c, 409, "follow-up not found or not pending approval")
-		}
-		if err != nil {
-			return serverError(c, err)
-		}
-		if !okConsent {
-			_, _ = d.pool.Exec(ctx, `UPDATE lead_followups SET status='rejected', decided_by=$2, decided_at=now() WHERE id=$1`, id, "system:consent_withdrawn")
+			// not approved: either there is no such pending draft, or the customer no longer agrees
+			var pending bool
+			if e := d.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM lead_followups WHERE id=$1 AND status='pending_approval')`, id).Scan(&pending); e != nil {
+				return serverError(c, e)
+			}
+			if !pending {
+				return leadErr(c, 409, "follow-up not found or not pending approval")
+			}
+			_, _ = d.pool.Exec(ctx, `UPDATE lead_followups SET status='rejected', decided_by='system:consent_withdrawn', decided_at=now()
+				WHERE id=$1 AND status='pending_approval'`, id)
 			return leadErr(c, 409, "lead no longer agrees to marketing messages; the draft was rejected")
 		}
-		status := "approved"
-		sentSQL := "NULL"
-		if channel == "mock" {
-			status, sentSQL = "sent", "now()"
-		}
-		// the consent is checked again inside the UPDATE, so a withdrawal between the check above and this
-		// statement still stops the draft
-		tag, err := d.pool.Exec(ctx, `UPDATE lead_followups f SET status=$2, decided_by=$3, decided_at=now(), sent_at=`+sentSQL+`
-			WHERE f.id=$1 AND f.status='pending_approval' AND EXISTS (SELECT 1 FROM leads l WHERE l.id=f.lead_id
-				AND l.consent_general AND l.consent_marketing AND l.consent_withdrawn_at IS NULL AND l.anonymized_at IS NULL)`,
-			id, status, email)
 		if err != nil {
 			return serverError(c, err)
-		}
-		if tag.RowsAffected() == 0 {
-			return leadErr(c, 409, "follow-up is no longer pending or the lead withdrew consent")
 		}
 		auditUser(c, d.pool, "followup_"+status, "followup:"+strconv.Itoa(id), "lead:"+strconv.FormatInt(leadID, 10))
 		return c.JSON(fiber.Map{"status": status})
