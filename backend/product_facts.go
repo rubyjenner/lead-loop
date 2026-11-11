@@ -139,7 +139,7 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	})
 
 	// PUT /products/:id {"name","description","price","brand_info"}: edit a product after it was created
-	app.Put("/products/:id", writers, func(c *fiber.Ctx) error {
+	app.Put("/products/:id", writers, productEditor(pool), func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid product id"})
@@ -168,7 +168,7 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		return c.JSON(fiber.Map{"ok": true})
 	})
 
-	app.Put("/product-facts/:id", writers, func(c *fiber.Ctx) error {
+	app.Put("/product-facts/:id", writers, productEditor(pool), func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid product id"})

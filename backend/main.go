@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,6 +24,9 @@ type Campaign struct {
 	Budget         float64   `json:"budget"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
+	CreatedBy      *string   `json:"created_by"`
+	CreatedByName  string    `json:"created_by_name"`
+	CreatedByTitle string    `json:"created_by_title"`
 }
 
 type Product struct {
@@ -49,14 +51,29 @@ type Content struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	GeneratedBy string     `json:"generated_by"` // human, claude, gemini or template
 	CreatedBy   *string    `json:"created_by"`   // who created it (the approver must be someone else)
+
+	RejectReason string     `json:"reject_reason"`
+	RejectedBy   *string    `json:"rejected_by"`
+	RejectedAt   *time.Time `json:"rejected_at"`
+	EditedAt     *time.Time `json:"edited_at"`
+
+	// full name and job title of the people above (filled from the users table; empty if unknown)
+	CreatedByName   string `json:"created_by_name,omitempty"`
+	CreatedByTitle  string `json:"created_by_title,omitempty"`
+	ApprovedByName  string `json:"approved_by_name,omitempty"`
+	ApprovedByTitle string `json:"approved_by_title,omitempty"`
+	RejectedByName  string `json:"rejected_by_name,omitempty"`
+	RejectedByTitle string `json:"rejected_by_title,omitempty"`
 }
 
-const contentCols = `id, campaign_id, channel, body, status::text, approved_by, approved_at, publish_at, created_at, generated_by, created_by`
+const contentCols = `id, campaign_id, channel, body, status::text, approved_by, approved_at, publish_at, created_at, generated_by, created_by,
+	reject_reason, rejected_by, rejected_at, edited_at`
 
 func scanContent(row interface{ Scan(...any) error }) (Content, error) {
 	var x Content
 	err := row.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status,
-		&x.ApprovedBy, &x.ApprovedAt, &x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy)
+		&x.ApprovedBy, &x.ApprovedAt, &x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
+		&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt)
 	return x, err
 }
 
@@ -72,6 +89,9 @@ func main() {
 		log.Fatal(err)
 	}
 	if err := initAI(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
+	if err := initRoles(ctx, pool); err != nil {
 		log.Fatal(err)
 	}
 
@@ -119,6 +139,7 @@ func main() {
 	registerLeadRoutes(app, pool)
 	registerStaffReplyRoutes(app, pool)
 	registerDailyRoutes(app, pool)
+	registerLineFollowupRoutes(app, pool)
 	registerInboxRoutes(app, pool)
 	registerReportRoutes(app, pool)
 	registerChannelRoutes(app, pool)
@@ -141,9 +162,9 @@ func main() {
 			}
 		}
 		err := pool.QueryRow(c.Context(),
-			`INSERT INTO campaigns (product_id, name, goal, target_audience, budget)
-			 VALUES ($1,$2,$3,$4,$5) RETURNING id, status, created_at`,
-			in.ProductID, in.Name, in.Goal, in.TargetAudience, in.Budget,
+			`INSERT INTO campaigns (product_id, name, goal, target_audience, budget, created_by)
+			 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, status, created_at`,
+			in.ProductID, in.Name, in.Goal, in.TargetAudience, in.Budget, currentUser(c).Email,
 		).Scan(&in.ID, &in.Status, &in.CreatedAt)
 		if err != nil {
 			return serverError(c, err)
@@ -153,8 +174,10 @@ func main() {
 
 	app.Get("/campaigns", func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.Context(),
-			`SELECT id, product_id, name, goal, target_audience, budget::float8, status::text, created_at
-			 FROM campaigns ORDER BY id DESC`)
+			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text, c.created_at,
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,'')
+			 FROM campaigns c LEFT JOIN users u ON lower(u.email) = lower(c.created_by)
+			 ORDER BY c.id DESC`)
 		if err != nil {
 			return serverError(c, err)
 		}
@@ -162,7 +185,8 @@ func main() {
 		out := []Campaign{}
 		for rows.Next() {
 			var x Campaign
-			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt); err != nil {
+			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt,
+				&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle); err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, x)
@@ -185,10 +209,13 @@ func main() {
 		}
 		err = pool.QueryRow(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
-			        c.created_at, c.plan, c.plan_generated_by, p.name, p.image_url
-			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id WHERE c.id=$1`, id,
+			        c.created_at, c.plan, c.plan_generated_by, p.name, p.image_url,
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,'')
+			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id
+			 LEFT JOIN users u ON lower(u.email) = lower(c.created_by) WHERE c.id=$1`, id,
 		).Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status,
-			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName, &x.ProductImageURL)
+			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName, &x.ProductImageURL,
+			&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
@@ -239,7 +266,7 @@ func main() {
 	})
 
 	// Step 3: AI (or a person, for now) creates a content draft for a campaign
-	app.Post("/campaigns/:id/contents", writers, func(c *fiber.Ctx) error {
+	app.Post("/campaigns/:id/contents", writers, campaignEditor(pool), func(c *fiber.Ctx) error {
 		campaignID, err := c.ParamsInt("id")
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
@@ -279,12 +306,14 @@ func main() {
 			return serverError(c, err)
 		}
 		defer rows.Close()
+		who := loadPeople(c.UserContext(), pool)
 		out := []Content{}
 		for rows.Next() {
 			x, err := scanContent(rows)
 			if err != nil {
 				return serverError(c, err)
 			}
+			who.fill(&x)
 			out = append(out, x)
 		}
 		return c.JSON(out)
@@ -301,7 +330,8 @@ func main() {
 		}
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
-			        c.publish_at, c.created_at, c.generated_by, c.created_by, k.name
+			        c.publish_at, c.created_at, c.generated_by, c.created_by,
+			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, k.name
 			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id
 			 WHERE ($1 = '' OR c.status::text = $1)
 			 ORDER BY c.id DESC LIMIT 200`, status)
@@ -313,20 +343,23 @@ func main() {
 			Content
 			CampaignName string `json:"campaign_name"`
 		}
+		who := loadPeople(c.UserContext(), pool)
 		out := []row{}
 		for rows.Next() {
 			var x row
 			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
-				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy, &x.CampaignName); err != nil {
+				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
+				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.CampaignName); err != nil {
 				return serverError(c, err)
 			}
+			who.fill(&x.Content)
 			out = append(out, x)
 		}
 		return c.JSON(out)
 	})
 
 	// draft or rejected -> pending_approval
-	app.Post("/contents/:id/submit", writers, func(c *fiber.Ctx) error {
+	app.Post("/contents/:id/submit", writers, contentEditor(pool), func(c *fiber.Ctx) error {
 		return setContentStatus(c, pool,
 			`UPDATE contents SET status='pending_approval'
 			 WHERE id=$1 AND status IN ('draft','rejected')`,
@@ -340,17 +373,18 @@ func main() {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid content id"})
 		}
 		// Company rule: the approver must be a different person from the creator of the content.
-		var creator *string
-		err = pool.QueryRow(c.Context(), `SELECT created_by FROM contents WHERE id=$1`, id).Scan(&creator)
+		var creator, campaignCreator *string
+		err = pool.QueryRow(c.Context(),
+			`SELECT c.created_by, k.created_by FROM contents c JOIN campaigns k ON k.id=c.campaign_id WHERE c.id=$1`, id).Scan(&creator, &campaignCreator)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(409).JSON(fiber.Map{"error": "content not found or not pending approval"})
 		}
 		if err != nil {
 			return serverError(c, err)
 		}
-		if creator != nil && strings.EqualFold(*creator, currentUser(c).Email) {
+		if !mayDecide(currentUser(c).Email, creator, campaignCreator) {
 			auditUser(c, pool, "content_approve_denied", "content:"+strconv.Itoa(id), "approver is the creator")
-			return c.Status(403).JSON(fiber.Map{"error": "approver must be a different person from the content creator"})
+			return c.Status(403).JSON(fiber.Map{"error": "approver must be a different person from the creator"})
 		}
 		tag, err := pool.Exec(c.Context(),
 			`UPDATE contents SET status='approved', approved_by=$1, approved_at=now()
@@ -365,12 +399,7 @@ func main() {
 		return c.JSON(fiber.Map{"status": "approved"})
 	})
 
-	app.Post("/contents/:id/reject", writers, func(c *fiber.Ctx) error {
-		return setContentStatus(c, pool,
-			`UPDATE contents SET status='rejected'
-			 WHERE id=$1 AND status='pending_approval'`,
-			"content not found or not pending approval", "rejected", "content_rejected")
-	})
+	registerContentRuleRoutes(app, pool) // edit a draft, reject with a reason
 
 	// AI retry queue: when every provider failed and a template draft was saved, a worker tries the AI
 	// again later (1 min, 5 min, 15 min, 1 h, 3 h) and upgrades the draft if nobody has touched it yet.
@@ -378,6 +407,7 @@ func main() {
 	registerAIRoutes(app, pool, queue)
 	go runWorker(ctx, queue, upgradeHandler(pool), 15*time.Second, envInt("AI_RETRY_MAX", 5))
 	go runDailyScheduler(ctx, pool)
+	go runLineFollowupSender(ctx, pool)
 
 	log.Fatal(app.Listen(":8080"))
 }

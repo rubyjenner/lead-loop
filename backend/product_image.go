@@ -69,7 +69,7 @@ func registerProductImagePublic(app fiber.Router, pool *pgxpool.Pool) {
 // registerProductImageUpload: needs login, called from registerStaffReplyRoutes (after registerAuthRoutes).
 func registerProductImageUpload(app fiber.Router, pool *pgxpool.Pool) {
 	writers := requireRole("marketing", "admin")
-	app.Post("/products/:id/image", writers, func(c *fiber.Ctx) error {
+	app.Post("/products/:id/image", writers, productEditor(pool), func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid product id"})

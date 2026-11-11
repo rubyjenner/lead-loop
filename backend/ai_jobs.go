@@ -154,7 +154,7 @@ func upgradeHandler(pool *pgxpool.Pool) func(context.Context, Job) error {
 			for i, text := range splitDrafts(r.Text, len(j.ContentIDs)) {
 				if _, err := pool.Exec(ctx,
 					`UPDATE contents SET body=$1, generated_by=$2
-					 WHERE id=$3 AND status='draft' AND generated_by='template'`,
+					 WHERE id=$3 AND status='draft' AND generated_by='template' AND edited_at IS NULL`,
 					text, r.By, j.ContentIDs[i]); err != nil {
 					return err
 				}

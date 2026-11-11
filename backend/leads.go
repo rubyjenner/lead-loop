@@ -297,7 +297,7 @@ func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 		  (SELECT count(*) FROM customer_messages m WHERE m.lead_id = leads.id AND m.seen_at IS NULL)
 		FROM leads WHERE anonymized_at IS NULL
 		  AND ($1 = '' OR status = $1) AND ($2 = '' OR level = $2) AND ($3 = '' OR channel = $3)
-		ORDER BY score DESC, id DESC LIMIT 200`,
+		ORDER BY created_at DESC, id DESC LIMIT 200`,
 		c.Query("status"), c.Query("level"), c.Query("channel"))
 	if err != nil {
 		return serverError(c, err)
@@ -649,8 +649,10 @@ type scoringRuleReq struct {
 }
 
 func (a *leadAPI) listRules(c *fiber.Ctx) error {
-	rows, err := a.pool.Query(c.Context(), `SELECT id, name, description, category, is_core, condition, points, mode, max_total, active, sort_order
-		FROM scoring_rules ORDER BY sort_order, id`)
+	rows, err := a.pool.Query(c.Context(), `SELECT r.id, r.name, r.description, r.category, r.is_core, r.condition, r.points, r.mode, r.max_total, r.active, r.sort_order,
+		       r.updated_at, r.updated_by, COALESCE(u.name,''), COALESCE(u.job_title,'')
+		FROM scoring_rules r LEFT JOIN users u ON lower(u.email) = lower(r.updated_by)
+		ORDER BY r.sort_order, r.id`)
 	if err != nil {
 		return serverError(c, err)
 	}
@@ -664,11 +666,15 @@ func (a *leadAPI) listRules(c *fiber.Ctx) error {
 		var cond json.RawMessage
 		var pts, order int
 		var max *int
-		if err := rows.Scan(&id, &name, &desc, &cat, &core, &cond, &pts, &mode, &max, &active, &order); err != nil {
+		var updAt *time.Time
+		var updBy *string
+		var updName, updTitle string
+		if err := rows.Scan(&id, &name, &desc, &cat, &core, &cond, &pts, &mode, &max, &active, &order, &updAt, &updBy, &updName, &updTitle); err != nil {
 			return serverError(c, err)
 		}
 		out = append(out, fiber.Map{"id": id, "name": name, "description": desc, "category": cat, "is_core": core,
-			"condition": cond, "points": pts, "mode": mode, "max_total": max, "active": active, "sort_order": order})
+			"condition": cond, "points": pts, "mode": mode, "max_total": max, "active": active, "sort_order": order,
+			"updated_at": updAt, "updated_by": updBy, "updated_by_name": updName, "updated_by_title": updTitle})
 	}
 	return c.JSON(out)
 }

@@ -349,9 +349,9 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 
 	app.Get("/auth/me", func(c *fiber.Ctx) error {
 		u := currentUser(c)
-		var name string
-		_ = pool.QueryRow(c.UserContext(), `SELECT name FROM users WHERE id=$1`, currentUserID(c)).Scan(&name)
-		return c.JSON(fiber.Map{"id": u.Subject, "email": u.Email, "role": u.Role, "name": name})
+		var name, title string
+		_ = pool.QueryRow(c.UserContext(), `SELECT name, job_title FROM users WHERE id=$1`, currentUserID(c)).Scan(&name, &title)
+		return c.JSON(fiber.Map{"id": u.Subject, "email": u.Email, "role": u.Role, "name": name, "job_title": title})
 	})
 
 	// Change own password. Needs the current password (rate limited per user), then returns a new
@@ -416,6 +416,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		var in struct {
 			Email    string `json:"email"`
 			Name     string `json:"name"`
+			JobTitle string `json:"job_title"`
 			Password string `json:"password"`
 			Role     string `json:"role"`
 		}
@@ -424,6 +425,10 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		}
 		in.Email = strings.ToLower(strings.TrimSpace(in.Email))
 		in.Name = strings.TrimSpace(in.Name)
+		in.JobTitle = strings.TrimSpace(in.JobTitle)
+		if len([]rune(in.JobTitle)) > maxNameLen {
+			return c.Status(400).JSON(fiber.Map{"error": "job title is too long"})
+		}
 		if !validEmail(in.Email) {
 			return c.Status(400).JSON(fiber.Map{"error": "valid email is required"})
 		}
@@ -456,9 +461,9 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		defer func() { _ = tx.Rollback(ctx) }()
 		var id int64
 		err = tx.QueryRow(ctx,
-			`INSERT INTO users (email, name, password_hash, role, must_change_password)
-			 VALUES ($1,$2,$3,$4,true) RETURNING id`,
-			in.Email, in.Name, string(hash), in.Role).Scan(&id)
+			`INSERT INTO users (email, name, job_title, password_hash, role, must_change_password)
+			 VALUES ($1,$2,$3,$4,$5,true) RETURNING id`,
+			in.Email, in.Name, in.JobTitle, string(hash), in.Role).Scan(&id)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return c.Status(409).JSON(fiber.Map{"error": "email already exists"})
@@ -466,7 +471,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		out := fiber.Map{"id": id, "email": in.Email, "name": in.Name, "role": in.Role, "must_change_password": true}
+		out := fiber.Map{"id": id, "email": in.Email, "name": in.Name, "job_title": in.JobTitle, "role": in.Role, "must_change_password": true}
 		if invite {
 			tok, exp, err := createUserToken(ctx, tx, id, "invite", inviteTTL, currentUserID(c))
 			if err != nil {
@@ -488,7 +493,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 
 	app.Get("/users", admin, func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.UserContext(),
-			`SELECT u.id, u.email, u.name, u.role, u.active, u.must_change_password, u.auth_provider,
+			`SELECT u.id, u.email, u.name, u.job_title, u.role, u.active, u.must_change_password, u.auth_provider,
 			        u.last_login_at, u.created_at,
 			        EXISTS (SELECT 1 FROM user_tokens t
 			                WHERE t.user_id=u.id AND t.used_at IS NULL AND t.expires_at > now())
@@ -501,6 +506,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			ID                 int64      `json:"id"`
 			Email              string     `json:"email"`
 			Name               string     `json:"name"`
+			JobTitle           string     `json:"job_title"`
 			Role               string     `json:"role"`
 			Active             bool       `json:"active"`
 			MustChangePassword bool       `json:"must_change_password"`
@@ -512,7 +518,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		out := []user{}
 		for rows.Next() {
 			var u user
-			if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Active, &u.MustChangePassword,
+			if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.JobTitle, &u.Role, &u.Active, &u.MustChangePassword,
 				&u.AuthProvider, &u.LastLoginAt, &u.CreatedAt, &u.PendingLink); err != nil {
 				return serverError(c, err)
 			}
@@ -534,9 +540,10 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			Role   *string `json:"role"`
 			Active *bool   `json:"active"`
 			Name   *string `json:"name"`
+			Title  *string `json:"job_title"`
 		}
-		if err := c.BodyParser(&in); err != nil || (in.Role == nil && in.Active == nil && in.Name == nil) {
-			return c.Status(400).JSON(fiber.Map{"error": "provide role, active and/or name"})
+		if err := c.BodyParser(&in); err != nil || (in.Role == nil && in.Active == nil && in.Name == nil && in.Title == nil) {
+			return c.Status(400).JSON(fiber.Map{"error": "provide role, active, name and/or job_title"})
 		}
 		if in.Name != nil {
 			n := strings.TrimSpace(*in.Name)
@@ -544,6 +551,13 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 				return c.Status(400).JSON(fiber.Map{"error": "name is too long"})
 			}
 			in.Name = &n
+		}
+		if in.Title != nil {
+			t := strings.TrimSpace(*in.Title)
+			if len([]rune(t)) > maxNameLen {
+				return c.Status(400).JSON(fiber.Map{"error": "job title is too long"})
+			}
+			in.Title = &t
 		}
 		if in.Role != nil && !validRoles[*in.Role] {
 			return c.Status(400).JSON(fiber.Map{"error": "role must be admin, marketing or sales"})
@@ -587,9 +601,9 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 			}
 		}
 		if _, err = tx.Exec(ctx,
-			`UPDATE users SET role=$1, active=$2, name=COALESCE($5, name),
+			`UPDATE users SET role=$1, active=$2, name=COALESCE($5, name), job_title=COALESCE($6, job_title),
 			   token_version = token_version + CASE WHEN $4 THEN 1 ELSE 0 END
-			 WHERE id=$3`, newRole, newActive, id, curActive && !newActive, in.Name); err != nil {
+			 WHERE id=$3`, newRole, newActive, id, curActive && !newActive, in.Name, in.Title); err != nil {
 			return serverError(c, err)
 		}
 		if err = tx.Commit(ctx); err != nil {
