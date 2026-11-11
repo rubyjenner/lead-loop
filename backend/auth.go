@@ -271,6 +271,7 @@ func loginEmailKey(c *fiber.Ctx) string {
 // registerAuthRoutes registers the public login route, then requires auth for everything
 // registered after it (Fiber runs handlers in registration order).
 func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
+	limitStore := newRateLimitStorage() // Redis when REDIS_URL works, else memory (see ratelimit_store.go)
 	tooMany := func(c *fiber.Ctx) error {
 		return c.Status(429).JSON(fiber.Map{"error": "too many failed attempts, try again in 15 minutes"})
 	}
@@ -280,6 +281,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		Max:                    loginMaxAttempts,
 		Expiration:             loginWindow,
 		SkipSuccessfulRequests: true,
+		Storage:                limitStore,
 		LimitReached:           tooMany,
 	}), limiter.New(limiter.Config{
 		// Also count failures per email (10 per 15 min), so a password guesser who changes IP is still
@@ -288,6 +290,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		Expiration:             loginWindow,
 		SkipSuccessfulRequests: true,
 		KeyGenerator:           loginEmailKey,
+		Storage:                limitStore,
 		LimitReached:           tooMany,
 	}), func(c *fiber.Ctx) error {
 		var in struct {
@@ -358,6 +361,7 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		Expiration:             loginWindow,
 		SkipSuccessfulRequests: true,
 		KeyGenerator:           func(c *fiber.Ctx) string { return "pw:" + currentUser(c).Subject },
+		Storage:                limitStore,
 		LimitReached:           tooMany,
 	}), func(c *fiber.Ctx) error {
 		var in struct {

@@ -19,6 +19,8 @@ export default function Overview() {
   const { leads, pending, campaigns, inbox } = d
   const todo = [
     inbox.leads_ready > 0 && { to: '/leads', text: `${inbox.leads_ready} ลีดพร้อมส่งต่อ รอเซลส์รับ${inbox.leads_ready_oldest ? ` (รอนานสุด ${timeAgo(inbox.leads_ready_oldest).replace(' ที่แล้ว', '')})` : ''}` },
+    inbox.leads_unassigned > 0 && { to: '/leads', text: `${inbox.leads_unassigned} ลีดที่ถึงเกณฑ์แต่ยังไม่มีผู้รับผิดชอบ` },
+    inbox.my_leads > 0 && { to: '/leads', text: `${inbox.my_leads} ลีดที่คุณรับผิดชอบอยู่` },
     inbox.messages_unread > 0 && { to: '/leads', text: `${inbox.messages_unread} ลีดมีข้อความใหม่จากลูกค้า รอเซลส์ตอบ` },
     inbox.contents_to_approve > 0 && { to: '/approvals', text: `${inbox.contents_to_approve} คอนเทนต์รอคุณอนุมัติ` },
     inbox.followups_to_approve > 0 && { to: '/followups', text: `${inbox.followups_to_approve} ร่างข้อความติดตามลีดรออนุมัติ` },

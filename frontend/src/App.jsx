@@ -8,6 +8,7 @@ import SetPassword from './pages/SetPassword.jsx'
 import ChangePassword from './pages/ChangePassword.jsx'
 import Users from './pages/Users.jsx'
 import Audit from './pages/Audit.jsx'
+import Retention from './pages/Retention.jsx'
 import Soon from './pages/Soon.jsx'
 import Approvals from './pages/Approvals.jsx'
 import Campaigns from './pages/Campaigns.jsx'
@@ -63,6 +64,7 @@ function Shell() {
             <>
               <div className="nav-group">ผู้ดูแลระบบ</div>
               <NavLink to="/users" className="nav-item">ผู้ใช้</NavLink>
+              <NavLink to="/retention" className="nav-item">ระยะเก็บข้อมูล</NavLink>
               <NavLink to="/audit" className="nav-item">บันทึกการใช้งาน</NavLink>
             </>
           )}
@@ -99,6 +101,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/users" element={<Users />} />
         <Route path="/audit" element={<Audit />} />
+        <Route path="/retention" element={<Retention />} />
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/approvals" element={<Approvals />} />

@@ -124,8 +124,24 @@ if ($fc.Count -eq 1) {
   Check 'reject a sent draft -> 409' ((Call 'POST' "/followups/$($fc[0].id)/reject").Status -eq 409)
 }
 
+Write-Host "`n== General consent withdrawn while a draft waits: rejected at once ==" -ForegroundColor Cyan
+$d = NewLead 'Daily smoke D (withdraws)' $true
+Sql "UPDATE leads SET created_at = now() - interval '8 days' WHERE id = $d;"
+$null = Call 'POST' '/daily-jobs/run'
+$fd = @((Call 'GET' '/followups?status=pending_approval').Body | Where-Object { $_.lead_id -eq $d })
+Check 'lead D has a pending draft' ($fd.Count -eq 1)
+if ($fd.Count -eq 1) {
+  $w2 = Call 'POST' "/leads/$d/consent" '{"kind":"general","action":"withdrawn","text_version":"mock-v1"}'
+  Check 'general consent withdrawn' ($w2.Status -eq 200)
+  $still = @((Call 'GET' '/followups?status=pending_approval').Body | Where-Object { $_.id -eq $fd[0].id })
+  Check 'the draft left the approval queue without anyone clicking' ($still.Count -eq 0)
+  $rej2 = @((Call 'GET' '/followups?status=rejected').Body | Where-Object { $_.id -eq $fd[0].id })
+  Check 'the draft is rejected by the system' ($rej2.Count -eq 1)
+  Check 'approving it -> 409' ((Call 'POST' "/followups/$($fd[0].id)/approve").Status -eq 409)
+}
+
 Write-Host "`n== Cleanup ==" -ForegroundColor Cyan
-foreach ($id in @($a, $b, $c)) { $null = Call 'DELETE' "/leads/$id" }
+foreach ($id in @($a, $b, $c, $d)) { $null = Call 'DELETE' "/leads/$id" }
 Check 'test leads anonymized' ((Call 'GET' "/leads/$a").Status -in 200, 404)
 
 Write-Host "`nPassed: $script:pass   Failed: $script:fail" -ForegroundColor $(if ($script:fail -eq 0) { 'Green' } else { 'Red' })

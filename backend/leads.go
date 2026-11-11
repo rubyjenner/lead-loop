@@ -533,6 +533,9 @@ func (a *leadAPI) setLeadStatus(c *fiber.Ctx) error {
 	if tag.RowsAffected() == 0 {
 		return leadErr(c, 409, "lead not found or this status change is not allowed from its current status")
 	}
+	if req.Status == "handed_off" { // whoever takes the lead owns it, unless someone already does
+		_, _ = a.pool.Exec(c.Context(), `UPDATE leads SET assigned_to=COALESCE(assigned_to,$2), assigned_at=COALESCE(assigned_at,now()) WHERE id=$1`, id, strings.ToLower(currentUser(c).Email))
+	}
 	auditUser(c, a.pool, "lead_status_changed", "lead:"+strconv.FormatInt(id, 10), req.Status)
 	return c.JSON(fiber.Map{"status": req.Status})
 }

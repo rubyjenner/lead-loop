@@ -152,6 +152,9 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 
 	registerThreadRoute(app, pool)
 	registerProductFactsRoutes(app, pool)
+	registerAssignmentRoutes(app, pool)
+	registerRetentionRoutes(app, pool)
+	registerFeedbackRoutes(app, pool)
 	registerProductImageUpload(app, pool) // needs login too, kept here so main.go needs no new line
 }
 
@@ -159,6 +162,13 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 func registerStaffReplyPublic(app fiber.Router, pool *pgxpool.Pool) {
 	if err := initStaffReplies(context.Background(), pool); err != nil {
 		panic("staff_replies schema: " + err.Error())
+	}
+	if err := initRetention(context.Background(), pool); err != nil {
+		panic("retention schema: " + err.Error())
+	}
+	go runRetentionScheduler(context.Background(), pool)
+	if err := initAssignment(context.Background(), pool); err != nil {
+		panic("assignment schema: " + err.Error())
 	}
 	if err := initProductFacts(context.Background(), pool); err != nil {
 		panic("product facts schema: " + err.Error())

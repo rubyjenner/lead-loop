@@ -126,7 +126,16 @@ func (ch *chatChannelAPI) handleIncoming(ctx context.Context, channel, extID, te
 		return chatIncomingResult{}, err
 	}
 	out := chatIncomingResult{LeadID: id, Detected: []string{}}
-	if types := DetectEvents(text, kw); len(types) > 0 {
+	types := DetectEvents(text, kw)
+	if amount, ok := ExtractBudget(text); ok { // keep only the number, never the sentence
+		if _, err := ch.leads.pool.Exec(ctx, `UPDATE leads SET budget=$1 WHERE id=$2`, amount, id); err != nil {
+			return chatIncomingResult{}, err
+		}
+		if !chatHasEvent(types, "gave_budget") {
+			types = append(types, "gave_budget")
+		}
+	}
+	if len(types) > 0 {
 		evs := make([]leadEventReq, 0, len(types))
 		for _, t := range types {
 			evs = append(evs, leadEventReq{Type: t})
@@ -137,6 +146,9 @@ func (ch *chatChannelAPI) handleIncoming(ctx context.Context, channel, extID, te
 		}
 		out.Detected, out.Score, out.Level = detected, res.Score, res.Level
 		out.Qualified, out.ImmediateHandoff = res.Qualified, res.ImmediateHandoff
+		if res.Qualified && !staff { // just reached the hand-off threshold: give it an owner and tell sales
+			onLeadQualified(ctx, ch.leads.pool, id, res.Score)
+		}
 	} else { // nothing detected: do not recalculate, just report the current score
 		if err := ch.leads.pool.QueryRow(ctx, `SELECT score, level FROM leads WHERE id=$1`, id).Scan(&out.Score, &out.Level); err != nil {
 			return chatIncomingResult{}, err
@@ -328,5 +340,5 @@ func (ch *chatChannelAPI) mockConsent(c *fiber.Ctx) error {
 	}
 	auditUser(c, ch.leads.pool, action, "lead:"+strconv.FormatInt(id, 10), "via mock channel")
 	return c.JSON(fiber.Map{"lead_id": id, "created": created,
-		"reply": chatReplyConsentThanks})
+		"reply": "ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย"})
 }

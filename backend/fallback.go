@@ -17,8 +17,7 @@ type campaignInfo struct {
 	ProductDesc string
 	Price       *float64
 	Brand       string
-	// product facts filled in by marketing (product_facts.go); empty = not given, the AI must not invent them
-	Variants, ProductType, AfterSales, PaymentMethods, InstallmentInfo string
+	Past        pastResults // totals of earlier campaigns (no personal data)
 }
 
 // facts renders the data the AI may use (also sent to the AI providers).
@@ -35,14 +34,6 @@ func (ci campaignInfo) facts() string {
 		}
 		if ci.Brand != "" {
 			fmt.Fprintf(&sb, "ข้อมูลแบรนด์: %s\n", ci.Brand)
-		}
-		for _, f := range []struct{ label, val string }{
-			{"รุ่น/ขนาด/สี", ci.Variants}, {"แบบสินค้า", ci.ProductType}, {"บริการหลังการขาย", ci.AfterSales},
-			{"ช่องทางชำระเงิน", ci.PaymentMethods}, {"การผ่อนชำระ", ci.InstallmentInfo},
-		} {
-			if strings.TrimSpace(f.val) != "" {
-				fmt.Fprintf(&sb, "%s: %s\n", f.label, strings.TrimSpace(f.val))
-			}
 		}
 	} else {
 		sb.WriteString("สินค้า: (ยังไม่ได้ระบุสินค้า)\n")
@@ -89,6 +80,7 @@ func templatePlan(ci campaignInfo) string {
 		fmt.Fprintf(&sb, " (งบประมาณ %.0f บาท)", ci.Budget)
 	}
 	sb.WriteString("\n7. ขั้นต่อไป: ทีมตรวจแผน สร้างข้อความ ส่งอนุมัติ แล้วจึงเผยแพร่")
+	sb.WriteString("\n" + ci.Past.planSection())
 	return sb.String()
 }
 
@@ -127,7 +119,11 @@ func templateContents(ci campaignInfo, channel string, count int) []string {
 
 // planPrompt and contentsPrompt build the requests sent to the AI providers.
 func planPrompt(ci campaignInfo) string {
-	return "วางแผนแคมเปญสั้นๆ ประกอบด้วย กลุ่มลูกค้าย่อย ช่องทาง ข้อความหลัก และตัวชี้วัดที่ใช้วัดผล\n\n" + ci.facts()
+	p := "วางแผนแคมเปญสั้นๆ ประกอบด้วย กลุ่มลูกค้าย่อย ช่องทาง ข้อความหลัก และตัวชี้วัดที่ใช้วัดผล\n\n" + ci.facts()
+	if past := ci.Past.render(); past != "" {
+		p += "\n" + past + "ใช้ตัวเลขนี้ปรับช่องทาง กลุ่มเป้าหมาย และข้อความให้ดีขึ้นกว่ารอบก่อน อ้างอิงได้เฉพาะตัวเลขที่ให้ไว้ ห้ามเดาหรือแต่งตัวเลขเพิ่ม\n"
+	}
+	return p
 }
 
 func contentsPrompt(ci campaignInfo, channel string, count int) string {

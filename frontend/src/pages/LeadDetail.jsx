@@ -16,11 +16,22 @@ export default function LeadDetail() {
   const [busy, setBusy] = useState(false)
   const [thread, setThread] = useState([])
   const [replyText, setReplyText] = useState('')
+  const [owner, setOwner] = useState(null)
+  const [team, setTeam] = useState([])
 
   const load = useCallback(async () => {
     try { setLead(await api('GET', `/leads/${id}`)); setError('') } catch (e) { setError(e.message) }
   }, [id])
   useEffect(() => { load() }, [load])
+  const loadOwner = useCallback(async () => {
+    try { setOwner((await api('GET', '/lead-assignments')).find((x) => String(x.lead_id) === String(id)) || null) } catch { /* optional */ }
+  }, [id])
+  useEffect(() => { loadOwner() }, [loadOwner])
+  useEffect(() => { if (user.role === 'admin') api('GET', '/sales-team').then(setTeam).catch(() => {}) }, [user.role])
+  async function assign(email) {
+    setBusy(true)
+    try { await api('PUT', `/leads/${id}/assignment`, { assignee: email }); await loadOwner(); setToast(email ? 'บันทึกผู้รับผิดชอบแล้ว' : 'ปล่อยลีดแล้ว') } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
   const loadThread = useCallback(async () => {
     try { setThread(await api('GET', `/leads/${id}/thread`)) } catch { /* the page still works without it */ }
   }, [id])
@@ -79,6 +90,19 @@ export default function LeadDetail() {
                 <li key={i}><span>{b.rule}</span><span className={`pts ${b.points < 0 ? 'pts-neg' : 'pts-pos'}`}>{b.points > 0 ? '+' : ''}{b.points}</span></li>
               ))}
             </ul>
+          )}
+          {canSales && (
+            <div className="actions" style={{ marginTop: 14, alignItems: 'center' }}>
+              <span className="muted small">ผู้รับผิดชอบ: <b>{owner ? owner.name : 'ยังไม่มี'}</b></span>
+              {!owner && <button className="btn btn-quiet" disabled={busy} onClick={() => assign(user.email)}>รับเป็นผู้รับผิดชอบ</button>}
+              {owner && owner.email === user.email && <button className="btn btn-quiet" disabled={busy} onClick={() => assign('')}>ปล่อยลีด</button>}
+              {user.role === 'admin' && team.length > 0 && (
+                <select className="search" value={owner?.email || ''} disabled={busy} aria-label="มอบหมายให้" onChange={(e) => assign(e.target.value)}>
+                  <option value="">มอบหมายให้…</option>
+                  {team.map((t) => <option key={t.email} value={t.email}>{t.name}</option>)}
+                </select>
+              )}
+            </div>
           )}
           {canSales && (
             <div className="actions" style={{ marginTop: 14 }}>

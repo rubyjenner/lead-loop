@@ -29,18 +29,32 @@ func registerInboxRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if u.Role == "sales" || u.Role == "admin" {
 			var n int
 			var oldest *time.Time
+			// sales see leads that are theirs or nobody's; admin sees everything
 			if err := pool.QueryRow(ctx, `SELECT count(*), min(updated_at) FROM leads
-				WHERE status='qualified' AND anonymized_at IS NULL`).Scan(&n, &oldest); err != nil {
+				WHERE status='qualified' AND anonymized_at IS NULL
+				  AND ($1='admin' OR assigned_to IS NULL OR lower(assigned_to)=lower($2))`, u.Role, u.Email).Scan(&n, &oldest); err != nil {
 				return serverError(c, err)
 			}
 			out["leads_ready"] = n
 			out["leads_ready_oldest"] = oldest
 			var unread int // leads where the customer wrote and nobody has opened the conversation yet
 			if err := pool.QueryRow(ctx, `SELECT count(DISTINCT m.lead_id) FROM customer_messages m JOIN leads l ON l.id=m.lead_id
-				WHERE m.seen_at IS NULL AND l.anonymized_at IS NULL`).Scan(&unread); err != nil {
+				WHERE m.seen_at IS NULL AND l.anonymized_at IS NULL
+				  AND ($1='admin' OR l.assigned_to IS NULL OR lower(l.assigned_to)=lower($2))`, u.Role, u.Email).Scan(&unread); err != nil {
 				return serverError(c, err)
 			}
 			out["messages_unread"] = unread
+			var mine, unassigned int // open leads that belong to me / that nobody owns yet
+			if err := pool.QueryRow(ctx, `SELECT
+				count(*) FILTER (WHERE lower(assigned_to)=lower($1)),
+				count(*) FILTER (WHERE assigned_to IS NULL)
+				FROM leads WHERE status IN ('qualified','handed_off') AND anonymized_at IS NULL`, u.Email).Scan(&mine, &unassigned); err != nil {
+				return serverError(c, err)
+			}
+			out["my_leads"] = mine
+			if u.Role == "admin" {
+				out["leads_unassigned"] = unassigned
+			}
 		}
 		if u.Role == "marketing" || u.Role == "admin" {
 			var contents, followups int

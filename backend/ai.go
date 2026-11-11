@@ -38,18 +38,15 @@ func initAI(ctx context.Context, pool *pgxpool.Pool) error {
 // loadCampaign loads a campaign together with its product (if any).
 func loadCampaign(ctx context.Context, pool *pgxpool.Pool, id int) (campaignInfo, error) {
 	var (
-		ci                               campaignInfo
-		pname, pdesc, pbrand             *string
-		pvar, ptype, pafter, ppay, pinst *string
+		ci                   campaignInfo
+		pname, pdesc, pbrand *string
 	)
 	err := pool.QueryRow(ctx,
 		`SELECT c.name, c.goal, c.target_audience, c.budget::float8,
-		        p.name, p.description, p.price::float8, p.brand_info,
-		        p.variants, p.product_type, p.after_sales, p.payment_methods, p.installment_info
+		        p.name, p.description, p.price::float8, p.brand_info
 		 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id
 		 WHERE c.id = $1`, id,
-	).Scan(&ci.Name, &ci.Goal, &ci.Audience, &ci.Budget, &pname, &pdesc, &ci.Price, &pbrand,
-		&pvar, &ptype, &pafter, &ppay, &pinst)
+	).Scan(&ci.Name, &ci.Goal, &ci.Audience, &ci.Budget, &pname, &pdesc, &ci.Price, &pbrand)
 	if err != nil {
 		return ci, err
 	}
@@ -61,14 +58,6 @@ func loadCampaign(ctx context.Context, pool *pgxpool.Pool, id int) (campaignInfo
 	}
 	if pbrand != nil {
 		ci.Brand = *pbrand
-	}
-	for _, f := range []struct {
-		src *string
-		dst *string
-	}{{pvar, &ci.Variants}, {ptype, &ci.ProductType}, {pafter, &ci.AfterSales}, {ppay, &ci.PaymentMethods}, {pinst, &ci.InstallmentInfo}} {
-		if f.src != nil {
-			*f.dst = *f.src
-		}
 	}
 	return ci, nil
 }
@@ -111,21 +100,10 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		var attach struct {
-			Image string `json:"image"` // optional picture for this request only (not saved)
-		}
-		if len(c.Body()) > 0 {
-			if err := c.BodyParser(&attach); err != nil {
-				return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
-			}
-		}
-		img, imgFrom, err := resolveAIImage(c.UserContext(), pool, id, attach.Image)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": imageErrText(err)})
-		}
 		email := currentUser(c).Email
-		r := generateImg(c.UserContext(), systemPrompt, planPrompt(ci), !over(c, email),
-			func() string { return templatePlan(ci) }, img)
+		ci = withPastResults(c.UserContext(), pool, id, ci)
+		r := generate(c.UserContext(), systemPrompt, planPrompt(ci), !over(c, email),
+			func() string { return templatePlan(ci) })
 		recordUsage(c.UserContext(), pool, email, id, "plan", r)
 		if _, err := pool.Exec(c.UserContext(),
 			`UPDATE campaigns SET plan=$1, plan_generated_by=$2,
@@ -136,7 +114,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		queued := enqueue(c, r, Job{Kind: "plan", CampaignID: id, UserEmail: email})
 		auditUser(c, pool, "campaign_planned", fmt.Sprintf("campaign:%d", id), "generated_by="+r.By)
 		return c.JSON(fiber.Map{"campaign_id": id, "plan": r.Text, "generated_by": r.By,
-			"fallback_reason": r.Reason, "retry_queued": queued, "image_used": imageUsed(r, imgFrom)})
+			"fallback_reason": r.Reason, "retry_queued": queued})
 	})
 
 	// Step 3: draft content variants; saved as 'draft' (a human must still submit + approve)
@@ -148,7 +126,6 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		in := struct {
 			Channel string `json:"channel"`
 			Count   int    `json:"count"`
-			Image   string `json:"image"` // optional picture for this request only (not saved)
 		}{Channel: "line", Count: 3}
 		if len(c.Body()) > 0 {
 			if err := c.BodyParser(&in); err != nil {
@@ -169,13 +146,9 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		if err != nil {
 			return serverError(c, err)
 		}
-		img, imgFrom, err := resolveAIImage(c.UserContext(), pool, id, in.Image)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": imageErrText(err)})
-		}
 		email := currentUser(c).Email
-		r := generateImg(c.UserContext(), systemPrompt, contentsPrompt(ci, in.Channel, in.Count), !over(c, email),
-			func() string { return strings.Join(templateContents(ci, in.Channel, in.Count), "\n---\n") }, img)
+		r := generate(c.UserContext(), systemPrompt, contentsPrompt(ci, in.Channel, in.Count), !over(c, email),
+			func() string { return strings.Join(templateContents(ci, in.Channel, in.Count), "\n---\n") })
 		recordUsage(c.UserContext(), pool, email, id, "generate_contents", r)
 
 		out := []Content{}
@@ -194,7 +167,7 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		auditUser(c, pool, "contents_generated", fmt.Sprintf("campaign:%d", id),
 			fmt.Sprintf("generated_by=%s count=%d", r.By, len(out)))
 		return c.Status(201).JSON(fiber.Map{"generated_by": r.By, "fallback_reason": r.Reason,
-			"retry_queued": queued, "contents": out, "image_used": imageUsed(r, imgFrom)})
+			"retry_queued": queued, "contents": out})
 	})
 
 	// How much of today's AI quota the logged-in user has used.

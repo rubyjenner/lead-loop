@@ -193,13 +193,38 @@ else {
     Check 'asks payment -> bot quotes the payment methods' ($q2.Json.reply -like '*โอนพร้อมเพย์*')
     $q3 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'มีประกันไหมครับ' }
     Check 'after-sales left empty -> handed to staff, nothing invented' ($q3.Json.reply -like '*ทีมงานตอบให้โดยตรง*')
+    $qb = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'ผมมีงบประมาณ 15,000 บาทครับ' }
+    Check 'budget stated in chat is acknowledged' ($qb.Json.reply -like '*รับทราบงบประมาณ*')
     $q4 = Call 'POST' '/public/chat/messages' $null @{ session_id = $sid2; text = 'เอาเลยครับ สั่งซื้อยังไง' }
     Check 'ready to buy -> bot hands the order to staff' ($q4.Json.reply -like '*ยืนยันการสั่งซื้อ*')
     $mine2 = @((Call 'GET' '/leads?channel=web' $token $null).Json) | Where-Object { $_.display_name -eq $name2 } | Select-Object -First 1
     Check 'ready to buy -> lead is ready for sales' ($null -ne $mine2 -and $mine2.status -eq 'qualified')
+    Check 'budget in the chat is stored as a number on the lead (text is not stored)' ($null -ne $mine2 -and [double]$mine2.budget -eq 15000)
+    if ($mine2) {
+        Check 'admin can assign the lead to an active user' ((Call 'PUT' "/leads/$($mine2.id)/assignment" $token @{ assignee = $AdminEmail }).Status -eq 200)
+        $own = @((Call 'GET' '/lead-assignments' $token $null).Json) | Where-Object { $_.lead_id -eq $mine2.id } | Select-Object -First 1
+        Check 'assignment shows in the list' ($null -ne $own -and $own.email -eq $AdminEmail)
+        Check 'assigning to a stranger -> 400' ((Call 'PUT' "/leads/$($mine2.id)/assignment" $token @{ assignee = 'nobody@nowhere.invalid' }).Status -eq 400)
+        Check 'inbox counts my leads' ([int](Call 'GET' '/inbox' $token $null).Json.my_leads -ge 1)
+        Check 'release the lead' ((Call 'PUT' "/leads/$($mine2.id)/assignment" $token @{ assignee = '' }).Status -eq 200)
+    }
     if ($mine2) { [void](Call 'DELETE' "/leads/$($mine2.id)" $token $null) }
     if ($oldFacts) { [void](Call 'PUT' "/product-facts/$productId" $token @{ variants = $oldFacts.variants; product_type = $oldFacts.product_type; after_sales = $oldFacts.after_sales; payment_methods = $oldFacts.payment_methods; installment_info = $oldFacts.installment_info }) }
 }
+
+# ---------------------------------------------------------------- retention settings (nothing is deleted by this test)
+Write-Host "`n== Retention settings =="
+$ret = Call 'GET' '/retention' $token $null
+Check 'retention settings readable (admin)' ($ret.Status -eq 200 -and $null -ne $ret.Json.inactive_days)
+Check 'a risky period (5 days) is refused' ((Call 'PUT' '/retention' $token @{ inactive_days = 5; withdrawn_days = 0 }).Status -eq 400)
+Check 'same values can be saved back' ((Call 'PUT' '/retention' $token @{ inactive_days = [int]$ret.Json.inactive_days; withdrawn_days = [int]$ret.Json.withdrawn_days }).Status -eq 200)
+
+# ---------------------------------------------------------------- results of earlier campaigns (feed the next plan)
+Write-Host "`n== Past results for the next plan =="
+$pr = Call 'GET' "/campaigns/$CampaignId/past-results" $token $null
+Check 'past results readable' ($pr.Status -eq 200 -and $null -ne $pr.Json.min_leads)
+Check 'past results contain totals only (no names or ids)' ($pr.Status -eq 200 -and -not ($pr.Text -match 'display_name|channel_user_id|"lead_id"'))
+Check 'past results need login' ((Call 'GET' "/campaigns/$CampaignId/past-results" $null $null).Status -eq 401)
 
 # ---------------------------------------------------------------- cleanup of the test lead
 Write-Host "`n== Cleanup =="

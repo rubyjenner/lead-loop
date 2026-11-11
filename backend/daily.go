@@ -64,6 +64,20 @@ func initDaily(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_lead_idx ON lead_followups(lead_id)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_status_idx ON lead_followups(status)`,
+		// When a customer withdraws consent (or is anonymized) every draft that has not reached them yet is rejected
+		// right away, so nothing waiting for approval, or approved but not yet sent, can ever be sent to them.
+		`CREATE OR REPLACE FUNCTION reject_followups_on_withdraw() RETURNS trigger AS $$
+		BEGIN
+			UPDATE lead_followups SET status='rejected', decided_by='system:consent_withdrawn', decided_at=now()
+			WHERE lead_id = NEW.id AND (status='pending_approval' OR (status='approved' AND sent_at IS NULL));
+			RETURN NEW;
+		END
+		$$ LANGUAGE plpgsql`,
+		`DROP TRIGGER IF EXISTS leads_reject_followups ON leads`,
+		`CREATE TRIGGER leads_reject_followups AFTER UPDATE ON leads
+			FOR EACH ROW WHEN (NEW.consent_general = FALSE OR NEW.consent_marketing = FALSE
+				OR NEW.consent_withdrawn_at IS NOT NULL OR NEW.anonymized_at IS NOT NULL)
+			EXECUTE FUNCTION reject_followups_on_withdraw()`,
 	} {
 		if _, err := pool.Exec(ctx, s); err != nil {
 			return err
@@ -380,9 +394,17 @@ func (d *dailyAPI) decide(action string) fiber.Handler {
 		if channel == "mock" {
 			status, sentSQL = "sent", "now()"
 		}
-		if _, err := d.pool.Exec(ctx, `UPDATE lead_followups SET status=$2, decided_by=$3, decided_at=now(), sent_at=`+sentSQL+` WHERE id=$1`,
-			id, status, email); err != nil {
+		// the consent is checked again inside the UPDATE, so a withdrawal between the check above and this
+		// statement still stops the draft
+		tag, err := d.pool.Exec(ctx, `UPDATE lead_followups f SET status=$2, decided_by=$3, decided_at=now(), sent_at=`+sentSQL+`
+			WHERE f.id=$1 AND f.status='pending_approval' AND EXISTS (SELECT 1 FROM leads l WHERE l.id=f.lead_id
+				AND l.consent_general AND l.consent_marketing AND l.consent_withdrawn_at IS NULL AND l.anonymized_at IS NULL)`,
+			id, status, email)
+		if err != nil {
 			return serverError(c, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return leadErr(c, 409, "follow-up is no longer pending or the lead withdrew consent")
 		}
 		auditUser(c, d.pool, "followup_"+status, "followup:"+strconv.Itoa(id), "lead:"+strconv.FormatInt(leadID, 10))
 		return c.JSON(fiber.Map{"status": status})

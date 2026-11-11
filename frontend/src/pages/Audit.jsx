@@ -4,6 +4,8 @@ import { fmtDateTime } from '../ui.jsx'
 
 // Plain-language names for audit actions.
 const ACTIONS = {
+  lead_anonymized_retention: 'ระบบลบข้อมูลลีดตามระยะเก็บ', retention_settings: 'ตั้งระยะเก็บข้อมูล', retention_run: 'สั่งลบข้อมูลที่ครบกำหนด',
+  lead_assigned: 'มอบหมายผู้รับผิดชอบลีด', product_update: 'แก้ไขสินค้า', product_facts_update: 'แก้ข้อมูลสินค้าที่บอตใช้ตอบ',
   login_success: 'ล็อกอินสำเร็จ', login_failed: 'ล็อกอินไม่สำเร็จ',
   user_created: 'สร้างบัญชี', user_updated: 'แก้ไขบัญชี',
   password_changed: 'เปลี่ยนรหัสผ่าน', password_reset: 'แอดมินตั้งรหัสผ่านให้',

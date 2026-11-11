@@ -104,7 +104,7 @@ export async function mockRequest(method, path, body, token) {
     const sid = body?.session_id; const key = 'pub-' + sid
     if (path.endsWith('/consent')) {
       if (!chatMap[key]) { const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้าเว็บ', channel: 'web', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }; leads.push(l); chatMap[key] = l.id }
-      return ok({ reply: 'ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ' })
+      return ok({ reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
     }
     if (path.endsWith('/withdraw')) { const l = leads.find((x) => x.id === chatMap[key]); if (l) { l.consent_general = false; l.consent_marketing = false; l.status = 'lost' } delete chatMap[key]; return ok({ ok: true, reply: 'ถอนความยินยอมแล้วค่ะ ระบบจะไม่ประมวลผลข้อมูลของคุณอีก' }) }
     if (path.endsWith('/messages')) {
@@ -212,7 +212,7 @@ export async function mockRequest(method, path, body, token) {
         const l = { id: ++leadSeq, display_name: body.display_name || 'ลูกค้า (mock)', channel: 'mock', budget: null, status: 'new', score: 0, level: 'cold', consent_general: true, consent_marketing: !!body.consent_marketing, created_at: new Date().toISOString(), score_breakdown: [] }
         leads.push(l); chatMap[ext] = id = l.id
       }
-      return ok({ lead_id: id, created: true, reply: 'ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ' })
+      return ok({ lead_id: id, created: true, reply: 'ขอบคุณที่ยินยอมค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย' })
     }
     if (path === '/channels/mock/messages' && method === 'POST') {
       const l = leads.find((x) => x.id === chatMap[ext])
@@ -252,6 +252,16 @@ export async function mockRequest(method, path, body, token) {
       by_campaign: [{ campaign_id: 3, campaign: 'เปิดตัวหูฟังไร้สาย Aria', leads: 26, reached_sales: 12, closed: 5, lost: 1, avg_score: 41 }, { campaign_id: 2, campaign: 'ลดล้างสต็อกมือถือมือสอง', leads: 11, reached_sales: 3, closed: 1, lost: 2, avg_score: 22 }, { campaign_id: null, campaign: '(ไม่ระบุแคมเปญ)', leads: 3, reached_sales: 1, closed: 0, lost: 0, avg_score: 12 }],
       score_bands: [{ band: 'high', leads: 13, closed: 5, lost: 1 }, { band: 'mid', leads: 14, closed: 1, lost: 1 }, { band: 'low', leads: 13, closed: 0, lost: 1 }] })
   }
+  const owners = (globalThis.__owners ||= { 1: 'kritsada.t@vannessplus.com' })
+  if (method === 'GET' && /^\/campaigns\/\d+\/past-results$/.test(path)) return ok({ enough: true, min_leads: 5, best_channel: 'line',
+    summary: 'ผลของแคมเปญรอบก่อน (ตัวเลขรวม ไม่มีข้อมูลส่วนบุคคล):\n- รวม: ลีด 20, ลีดร้อน 5 (25%), ส่งต่อเซลส์ 4, ปิดการขายได้ 2 (10% ของลีด), หลุด 3\n- ช่องทาง line: ลีด 12, ลีดร้อน 4 (33%), ส่งต่อเซลส์ 3, ปิดการขายได้ 2 (17% ของลีด), หลุด 1\n- ช่องทาง web: ลีด 8, ลีดร้อน 1 (13%), ส่งต่อเซลส์ 1, ปิดการขายได้ 0 (0% ของลีด), หลุด 2\n' })
+  if (method === 'GET' && path === '/retention') return ok({ inactive_days: globalThis.__ret?.inactive_days || 0, withdrawn_days: globalThis.__ret?.withdrawn_days || 0, inactive_due: (globalThis.__ret?.inactive_days || 0) > 0 ? 3 : 0, withdrawn_due: (globalThis.__ret?.withdrawn_days || 0) > 0 ? 1 : 0 })
+  if (method === 'PUT' && path === '/retention') { globalThis.__ret = { inactive_days: body.inactive_days || 0, withdrawn_days: body.withdrawn_days || 0 }; return ok(globalThis.__ret) }
+  if (method === 'POST' && path === '/retention/run') return ok({ inactive_done: 3, withdrawn_done: 1 })
+  if (method === 'GET' && path === '/lead-assignments') return ok(Object.entries(owners).map(([lid, email]) => ({ lead_id: +lid, email, name: (users.find((u) => u.email === email) || {}).name || email })))
+  if (method === 'GET' && path === '/sales-team') return ok(users.filter((u) => u.active && (u.role === 'sales' || u.role === 'admin')).map((u) => ({ email: u.email, name: u.name || u.email })))
+  m = path.match(/^\/leads\/(\d+)\/assignment$/)
+  if (method === 'PUT' && m) { if (body.assignee) owners[+m[1]] = body.assignee; else delete owners[+m[1]]; return ok({ ok: true, assignee: body.assignee || '' }) }
   if (path.startsWith('/leads') || path.startsWith('/scoring') || path === '/event-keywords') {
     const role = 'admin'
     let mm
