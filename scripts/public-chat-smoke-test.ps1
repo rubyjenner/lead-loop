@@ -77,6 +77,9 @@ if ($CampaignId -le 0) {
     $camps = Call 'GET' '/campaigns' $token $null
     $list = @($camps.Json)
     if ($list.Count -eq 0) { Write-Host 'No campaign found. Run scripts\demo-seed.ps1 first.' -ForegroundColor Red; exit 1 }
+    # prefer the newest campaign that has a product (other smoke tests leave product-less campaigns behind)
+    $withProduct = @($list | Where-Object { $_.product_id })
+    if ($withProduct.Count -gt 0) { $list = $withProduct }
     $CampaignId = [int](($list | Sort-Object { [int]$_.id } -Descending | Select-Object -First 1).id)
     Write-Host "Using campaign id $CampaignId"
 }
