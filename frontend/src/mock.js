@@ -113,6 +113,7 @@ export async function mockRequest(method, path, body, token) {
     }
   }
   if (!token) return err(401, 'unauthorized')
+  if (method === 'PUT' && path === '/auth/me') { Object.assign(globalThis.__me ||= {}, { name: body.name, job_title: body.job_title }); return ok({ ok: true }) }
   if (path === '/auth/me') return ok({ id: '1', email: 'admin@example.com', role: 'admin', name: 'อาทิตยา เสาเวียง' })
   if (method === 'POST' && path === '/auth/password') return ok({ token: 'mock-token', expires_in: 28800 })
   if (method === 'GET' && path === '/users') return ok(users)
@@ -170,6 +171,7 @@ export async function mockRequest(method, path, body, token) {
   m = path.match(/^\/campaigns\/(\d+)\/contents$/)
   if (method === 'GET' && m) return ok(contents.filter((c) => c.campaign_id === +m[1]))
   m = path.match(/^\/campaigns\/(\d+)\/plan$/)
+  if (m && method === 'PUT') { const c = campaigns.find((x) => x.id === +m[1]); if (!c) return err(404, 'campaign not found'); c.plan = body.plan; c.plan_generated_by = 'human'; if (c.status === 'draft') c.status = 'planned'; return ok({ campaign_id: c.id, plan: c.plan, generated_by: 'human' }) }
   if (method === 'POST' && m) {
     const c = campaigns.find((x) => x.id === +m[1])
     c.plan = `เป้าหมาย: ${c.goal || 'ยังไม่ระบุ'} งบ ${c.budget} บาท\n\n1) ประกาศสินค้าและราคาจริงในช่องทางหลัก\n2) ตอบคำถามจากข้อมูลสินค้า ไม่แต่งข้อมูลเพิ่ม\n3) ติดตามลีดที่ยินยอม ส่งต่อเซลส์เมื่อถึงเกณฑ์`

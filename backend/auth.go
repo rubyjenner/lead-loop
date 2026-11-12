@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
@@ -352,6 +353,35 @@ func registerAuthRoutes(app *fiber.App, pool *pgxpool.Pool) {
 		var name, title string
 		_ = pool.QueryRow(c.UserContext(), `SELECT name, job_title FROM users WHERE id=$1`, currentUserID(c)).Scan(&name, &title)
 		return c.JSON(fiber.Map{"id": u.Subject, "email": u.Email, "role": u.Role, "name": name, "job_title": title})
+	})
+
+	// Edit own display name and job title (shown instead of the e-mail on campaigns and approvals).
+	app.Put("/auth/me", func(c *fiber.Ctx) error {
+		var in struct {
+			Name     *string `json:"name"`
+			JobTitle *string `json:"job_title"`
+		}
+		if err := c.BodyParser(&in); err != nil || (in.Name == nil && in.JobTitle == nil) {
+			return c.Status(400).JSON(fiber.Map{"error": "provide name and/or job_title"})
+		}
+		for _, v := range []*string{in.Name, in.JobTitle} {
+			if v != nil {
+				*v = strings.TrimSpace(*v)
+				if utf8.RuneCountInString(*v) > 100 {
+					return c.Status(400).JSON(fiber.Map{"error": "name and job_title must be at most 100 characters"})
+				}
+			}
+		}
+		if in.Name != nil && *in.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name must not be empty"})
+		}
+		if _, err := pool.Exec(c.UserContext(),
+			`UPDATE users SET name=COALESCE($1, name), job_title=COALESCE($2, job_title) WHERE id=$3`,
+			in.Name, in.JobTitle, currentUserID(c)); err != nil {
+			return serverError(c, err)
+		}
+		auditUser(c, pool, "profile_updated", "", "")
+		return c.JSON(fiber.Map{"ok": true})
 	})
 
 	// Change own password. Needs the current password (rate limited per user), then returns a new

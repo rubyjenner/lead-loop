@@ -166,11 +166,12 @@ export function applyTheme(t) {
   document.documentElement.dataset.theme = t
   try { localStorage.setItem(THEME_KEY, t) } catch { /* ignore */ }
 }
-export function ThemeToggle() {
+export function ThemeToggle({ compact }) {
   const [t, setT] = useState(currentTheme)
+  const flip = () => { const n = t === 'dark' ? 'light' : 'dark'; applyTheme(n); setT(n) }
   return (
-    <button className="btn btn-quiet theme-btn" aria-label="สลับธีมสว่าง/มืด" onClick={() => { const n = t === 'dark' ? 'light' : 'dark'; applyTheme(n); setT(n) }}>
-      {t === 'dark' ? '☀ ธีมสว่าง' : '☾ ธีมมืด'}
+    <button className={compact ? 'icon-btn theme-icon' : 'btn btn-quiet theme-btn'} aria-label="สลับธีมสว่าง/มืด" title={t === 'dark' ? 'ธีมสว่าง' : 'ธีมมืด'} onClick={flip}>
+      {compact ? (t === 'dark' ? '☀' : '☾') : (t === 'dark' ? '☀ ธีมสว่าง' : '☾ ธีมมืด')}
     </button>
   )
 }

@@ -102,7 +102,7 @@ export default function ContentCard({ c, image, campaignCreator, user, onChanged
         )}
       </div>
       {c.status === 'pending_approval' && !mayDecide && user.role !== 'sales' && (
-        <p className="own-note">คุณเป็นผู้สร้างแคมเปญหรือคอนเทนต์นี้ จึงอนุมัติเองไม่ได้ ให้เพื่อนร่วมทีมที่เป็นการตลาดหรือแอดมินอนุมัติแทน <Link to="/approvals" className="link">ไปหน้าอนุมัติ</Link></p>
+        <p className="muted small">⏳ รอเพื่อนร่วมทีมอนุมัติ (ผู้สร้างอนุมัติเองไม่ได้) · <Link to="/approvals" className="link">ไปหน้าอนุมัติ</Link></p>
       )}
       {c.status === 'pending_approval' && user.role === 'sales' && <p className="muted small">รอผู้อนุมัติ (เซลส์ดูได้อย่างเดียว)</p>}
 

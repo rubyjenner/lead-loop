@@ -29,6 +29,8 @@ export default function CampaignDetail() {
   const [toast, setToast] = useState('')
   const [aiImage, setAiImage] = useState('') // optional picture for the next AI request only
   const [editProduct, setEditProduct] = useState(null)
+  const [editingPlan, setEditingPlan] = useState(false)
+  const [planText, setPlanText] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +62,11 @@ export default function CampaignDetail() {
       const r = await api('POST', `/campaigns/${id}/generate-contents`, { channel, count: Number(count), ...(aiImage ? { image: aiImage } : {}) })
       setNotice(describe(r, 'ร่าง')); await load()
     } catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
+  }
+  async function savePlan() {
+    setBusy('saveplan'); setNotice(null)
+    try { await api('PUT', `/campaigns/${id}/plan`, { plan: planText }); setEditingPlan(false); setToast('บันทึกแผนแล้ว'); await load() }
+    catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
   }
   async function openProduct() {
     try {
@@ -114,10 +121,13 @@ export default function CampaignDetail() {
       <section className="block">
         <div className="block-head">
           <h2>แผนแคมเปญ</h2>
-          {canEdit && (
-            <button className="btn btn-primary" disabled={!!busy} onClick={makePlan}>
-              {busy === 'plan' ? 'AI กำลังวางแผน…' : camp.plan ? 'ให้ AI วางแผนใหม่' : 'ให้ AI วางแผน'}
-            </button>
+          {canEdit && !editingPlan && (
+            <div className="genbar">
+              {camp.plan && <button className="btn btn-quiet" disabled={!!busy} onClick={() => { setPlanText(camp.plan); setEditingPlan(true) }}>แก้แผนเอง</button>}
+              <button className="btn btn-primary" disabled={!!busy} onClick={makePlan}>
+                {busy === 'plan' ? 'AI กำลังวางแผน…' : camp.plan ? 'ให้ AI วางแผนใหม่' : 'ให้ AI วางแผน'}
+              </button>
+            </div>
           )}
         </div>
         {past && (
@@ -128,8 +138,17 @@ export default function CampaignDetail() {
               : <>ยังมีลีดจากแคมเปญอื่นไม่ถึง {past.min_leads} ราย แผนนี้จึงยังไม่อิงผลรอบก่อน</>}
           </div>
         )}
-        {camp.plan
-          ? <><p className="plan">{camp.plan}</p><p className="muted small">{SOURCE[camp.plan_generated_by] || ''} · แผนใหม่จะเขียนทับแผนเดิม</p></>
+        {editingPlan ? (
+          <div className="ad-edit">
+            <textarea rows="12" maxLength={8000} value={planText} onChange={(e) => setPlanText(e.target.value)} aria-label="แผนแคมเปญ" />
+            <p className="muted small">ไม่ชอบที่ AI เขียน แก้ได้เลย แผนที่คุณแก้จะไม่ถูกเขียนทับเอง (ยกเว้นกด "ให้ AI วางแผนใหม่")</p>
+            <div className="card-actions">
+              <button className="btn btn-primary" disabled={!!busy || !planText.trim()} onClick={savePlan}>{busy === 'saveplan' ? 'กำลังบันทึก…' : 'บันทึกแผน'}</button>
+              <button className="btn btn-quiet" disabled={!!busy} onClick={() => setEditingPlan(false)}>ยกเลิก</button>
+            </div>
+          </div>
+        ) : camp.plan
+          ? <><p className="plan">{camp.plan}</p><p className="muted small">{SOURCE[camp.plan_generated_by] || ''} · "ให้ AI วางแผนใหม่" จะเขียนทับแผนเดิม</p></>
           : <p className="muted">ยังไม่มีแผน กดปุ่มด้านบนให้ AI ร่างแผนจากสินค้า เป้าหมาย และงบ ใช้เวลาไม่กี่วินาที</p>}
       </section>
 

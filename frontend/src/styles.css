@@ -337,3 +337,13 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 [data-theme="dark"] .pub-card { background: var(--paper); }
 [data-theme="dark"] .todo { background: var(--paper); }
 [data-theme="dark"] .scrim { background: rgba(0, 0, 0, .65); }
+
+/* top bar (language, theme, profile) */
+.topbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin:-12px 0 18px}
+.topbar .seg{padding:2px}.seg-sm button{padding:3px 10px;font-size:13px}
+.theme-icon{font-size:18px;width:34px;height:34px;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;padding:0}
+.topbar-me{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--text);padding:3px 10px 3px 3px;border:1px solid var(--line);border-radius:999px;background:var(--paper)}
+.topbar-me:hover{border-color:var(--loop)}.topbar-me .avatar{width:28px;height:28px;font-size:13px}
+.topbar-name{font-size:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.narrow{max-width:560px}.pref-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+@media (max-width:860px){.topbar{margin-top:0}.topbar-name{display:none}}

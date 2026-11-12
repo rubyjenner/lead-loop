@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
@@ -138,6 +139,36 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		auditUser(c, pool, "campaign_planned", fmt.Sprintf("campaign:%d", id), "generated_by="+r.By)
 		return c.JSON(fiber.Map{"campaign_id": id, "plan": r.Text, "generated_by": r.By,
 			"fallback_reason": r.Reason, "retry_queued": queued, "image_used": imageUsed(r, imgFrom)})
+	})
+
+	// Edit the plan by hand (the creator, or an admin with an audit entry). Marked 'human' so a late AI retry never overwrites it.
+	app.Put("/campaigns/:id/plan", writers, campaignEditor(pool), func(c *fiber.Ctx) error {
+		id, err := c.ParamsInt("id")
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid campaign id"})
+		}
+		var in struct {
+			Plan string `json:"plan"`
+		}
+		if err := c.BodyParser(&in); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+		}
+		in.Plan = strings.TrimSpace(in.Plan)
+		if n := utf8.RuneCountInString(in.Plan); n < 1 || n > 8000 {
+			return c.Status(400).JSON(fiber.Map{"error": "plan must be 1 to 8000 characters"})
+		}
+		tag, err := pool.Exec(c.UserContext(),
+			`UPDATE campaigns SET plan=$1, plan_generated_by='human',
+			   status = CASE WHEN status='draft' THEN 'planned'::campaign_status ELSE status END
+			 WHERE id=$2`, in.Plan, id)
+		if err != nil {
+			return serverError(c, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
+		}
+		auditUser(c, pool, "campaign_plan_edited", fmt.Sprintf("campaign:%d", id), "")
+		return c.JSON(fiber.Map{"campaign_id": id, "plan": in.Plan, "generated_by": "human"})
 	})
 
 	// Step 3: draft content variants; saved as 'draft' (a human must still submit + approve)

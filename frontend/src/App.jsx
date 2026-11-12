@@ -3,6 +3,8 @@ import { api } from './api.js'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
 import { LoopMark, ROLES, ThemeToggle } from './ui.jsx'
+import { useLang } from './i18n.jsx'
+import Profile from './pages/Profile.jsx'
 import Login from './pages/Login.jsx'
 import SetPassword from './pages/SetPassword.jsx'
 import ChangePassword from './pages/ChangePassword.jsx'
@@ -35,6 +37,7 @@ const WORK = [
 function Shell() {
   const { user, logout } = useAuth()
   const loc = useLocation()
+  const { lang, setLang, t } = useLang()
   const [inbox, setInbox] = useState({})
   useEffect(() => {
     if (!user || user.mustChange) return undefined
@@ -53,19 +56,19 @@ function Shell() {
       <aside className="side">
         <div className="brand"><LoopMark size={26} /><span>LeadLoop</span></div>
         <nav aria-label="เมนูหลัก">
-          <div className="nav-group">งานประจำวัน</div>
+          <div className="nav-group">{t('nav.daily', 'งานประจำวัน')}</div>
           {WORK.map(([to, label, ready]) => (
             <NavLink key={to} to={to} className={ready ? 'nav-item' : 'nav-item nav-soon'}>
-              {label}{!ready && <span className="soon-tag">เร็วๆ นี้</span>}{badge[to] > 0 && <span className="nav-badge" aria-label={`${badge[to]} รายการรอ`}>{badge[to]}</span>}
+              {t(to, label)}{!ready && <span className="soon-tag">เร็วๆ นี้</span>}{badge[to] > 0 && <span className="nav-badge" aria-label={`${badge[to]} รายการรอ`}>{badge[to]}</span>}
             </NavLink>
           ))}
-          {(user.role === 'admin' || user.role === 'marketing') && <NavLink to="/chat-test" className="nav-item">ทดลองแชตลูกค้า</NavLink>}
+          {(user.role === 'admin' || user.role === 'marketing') && <NavLink to="/chat-test" className="nav-item">{t('/chat-test', 'ทดลองแชตลูกค้า')}</NavLink>}
           {user.role === 'admin' && (
             <>
-              <div className="nav-group">ผู้ดูแลระบบ</div>
-              <NavLink to="/users" className="nav-item">ผู้ใช้</NavLink>
-              <NavLink to="/retention" className="nav-item">ระยะเก็บข้อมูล</NavLink>
-              <NavLink to="/audit" className="nav-item">บันทึกการใช้งาน</NavLink>
+              <div className="nav-group">{t('nav.admin', 'ผู้ดูแลระบบ')}</div>
+              <NavLink to="/users" className="nav-item">{t('/users', 'ผู้ใช้')}</NavLink>
+              <NavLink to="/retention" className="nav-item">{t('/retention', 'ระยะเก็บข้อมูล')}</NavLink>
+              <NavLink to="/audit" className="nav-item">{t('/audit', 'บันทึกการใช้งาน')}</NavLink>
             </>
           )}
         </nav>
@@ -75,11 +78,23 @@ function Shell() {
             <div className="me-name">{user.name || user.email}</div>
             <div className="me-role">{ROLES[user.role]?.label || user.role}{user.job_title ? ` · ${user.job_title}` : ''}</div>
           </div>
-          <ThemeToggle />
-          <button className="btn btn-quiet" onClick={() => logout()}>ออกจากระบบ</button>
+          <button className="btn btn-quiet" onClick={() => logout()}>{t('me.logout', 'ออกจากระบบ')}</button>
         </div>
       </aside>
-      <main className="main"><Outlet /></main>
+      <main className="main">
+        <div className="topbar">
+          <div className="seg seg-sm" role="group" aria-label="ภาษา / Language">
+            <button className={lang === 'th' ? 'seg-on' : ''} onClick={() => setLang('th')}>ไทย</button>
+            <button className={lang === 'en' ? 'seg-on' : ''} onClick={() => setLang('en')}>EN</button>
+          </div>
+          <ThemeToggle compact />
+          <NavLink to="/profile" className="topbar-me" title={t('me.profile', 'โปรไฟล์และการตั้งค่า')}>
+            <span className="avatar" aria-hidden="true">{initials}</span>
+            <span className="topbar-name">{user.name || user.email}</span>
+          </NavLink>
+        </div>
+        <Outlet />
+      </main>
     </div>
   )
 }
@@ -100,6 +115,7 @@ export default function App() {
       <Route path="/change-password" element={<ChangePassword />} />
       <Route element={<Shell />}>
         <Route path="/" element={<Home />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="/users" element={<Users />} />
         <Route path="/audit" element={<Audit />} />
         <Route path="/retention" element={<Retention />} />

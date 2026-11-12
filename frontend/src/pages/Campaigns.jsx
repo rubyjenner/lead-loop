@@ -12,6 +12,8 @@ export default function Campaigns() {
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null) // 'campaign'
   const [toast, setToast] = useState('')
+  const [q, setQ] = useState('')
+  const [st, setSt] = useState('')
   const canEdit = user.role === 'admin' || user.role === 'marketing'
 
   const load = useCallback(async () => {
@@ -23,6 +25,13 @@ export default function Campaigns() {
   useEffect(() => { load() }, [load])
 
   const product = (id) => products.find((p) => p.id === id)
+  // search the campaign name, goal, product and creator; optional status filter
+  const shown = (list || []).filter((c) => {
+    if (st && c.status !== st) return false
+    const needle = q.trim().toLowerCase()
+    if (!needle) return true
+    return [c.name, c.goal, product(c.product_id)?.name, c.created_by_name, c.created_by].some((v) => (v || '').toLowerCase().includes(needle))
+  })
 
   return (
     <div className="page">
@@ -42,11 +51,21 @@ export default function Campaigns() {
         </div>
       )}
       {list && list.length > 0 && (
+        <div className="toolbar">
+          <input className="search" placeholder="ค้นหาแคมเปญ สินค้า หรือผู้สร้าง" value={q} onChange={(e) => setQ(e.target.value)} aria-label="ค้นหาแคมเปญ" />
+          <select className="search" value={st} onChange={(e) => setSt(e.target.value)} aria-label="สถานะ">
+            <option value="">ทุกสถานะ</option>
+            {Object.entries(CAMPAIGN_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      )}
+      {list && list.length > 0 && shown.length === 0 && <div className="empty"><p className="empty-title">ไม่พบแคมเปญที่ตรงกับคำค้น</p></div>}
+      {list && shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>สร้างโดย</th><th>สร้างเมื่อ</th></tr></thead>
             <tbody>
-              {list.map((c) => (
+              {shown.map((c) => (
                 <tr key={c.id}>
                   <td><Link className="link" to={`/campaigns/${c.id}`}>{c.name}</Link></td>
                   <td>

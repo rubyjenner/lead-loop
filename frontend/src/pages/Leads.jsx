@@ -29,7 +29,8 @@ export default function Leads() {
   }, [level, status])
   useEffect(() => { load() }, [load])
 
-  const shown = (list || []).filter((l) => (!q || l.display_name.toLowerCase().includes(q.toLowerCase())) && (!mineOnly || owners[l.id]?.email === user.email))
+  const needle = q.trim().toLowerCase()
+  const shown = (list || []).filter((l) => (!needle || [l.display_name, LEAD_CHANNELS[l.channel], l.channel, LEAD_STATUS[l.status], owners[l.id]?.name].some((v) => (v || '').toLowerCase().includes(needle))) && (!mineOnly || owners[l.id]?.email === user.email))
   return (
     <div className="page">
       <header className="page-head">
@@ -50,7 +51,7 @@ export default function Leads() {
           <option value="">ทุกสถานะ</option>
           {Object.entries(LEAD_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input className="search" placeholder="ค้นหาชื่อ" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="search" placeholder="ค้นหาชื่อ ช่องทาง สถานะ หรือผู้รับผิดชอบ" value={q} onChange={(e) => setQ(e.target.value)} />
         {(user.role === 'sales' || user.role === 'admin') && <label className="checks"><input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} /> เฉพาะลีดของฉัน</label>}
       </div>
       {error && <div className="alert alert-error" role="alert">{error}</div>}

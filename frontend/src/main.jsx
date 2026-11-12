@@ -8,6 +8,7 @@ import '@fontsource/ibm-plex-sans-thai/600.css'
 import './styles.css'
 import App from './App.jsx'
 import { AuthProvider } from './auth.jsx'
+import { LangProvider } from './i18n.jsx'
 import { applyTheme, currentTheme } from './ui.jsx'
 
 applyTheme(currentTheme())
@@ -15,9 +16,11 @@ applyTheme(currentTheme())
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <LangProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </LangProvider>
     </BrowserRouter>
   </React.StrictMode>,
 )
