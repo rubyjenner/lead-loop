@@ -5,7 +5,7 @@ import { useAuth } from '../auth.jsx'
 import { LEAD_CHANNELS, Toast, canManage, fmtDateTime, timeAgo } from '../ui.jsx'
 import { LevelTag } from './Leads.jsx'
 
-const TABS = [['pending_approval', 'รออนุมัติ'], ['sent', 'ส่งแล้ว'], ['approved', 'อนุมัติแล้ว (รอช่องทาง)'], ['rejected', 'ถูกปฏิเสธ']]
+const TABS = [['pending_approval', 'รออนุมัติ'], ['sent', 'ส่งแล้ว'], ['approved', 'อนุมัติแล้ว (รอส่ง)'], ['failed', 'ส่งไม่สำเร็จ'], ['rejected', 'ถูกปฏิเสธ']]
 
 export default function Followups() {
   const { user } = useAuth()
@@ -17,6 +17,7 @@ export default function Followups() {
   const [busy, setBusy] = useState(0)
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState('')
+  const [quota, setQuota] = useState(null) // LINE monthly message quota
   const manage = canManage(user)
 
   const load = useCallback(async () => {
@@ -25,6 +26,7 @@ export default function Followups() {
       if (user.role === 'admin') setLast((await api('GET', '/daily-jobs/last')).run)
       setError('')
     } catch (e) { setError(e.message) }
+    api('GET', '/line/quota').then(setQuota).catch(() => setQuota(null))
   }, [user.role])
   useEffect(() => { load() }, [load])
 
@@ -60,7 +62,13 @@ export default function Followups() {
           {last ? <>รอบล่าสุด {last.day} ({last.triggered_by === 'schedule' ? 'อัตโนมัติ' : 'สั่งมือ'}) · ตรวจ {last.summary.checked} ลีด · เงียบ 3 วัน {last.summary.no_reply_3d} · เงียบ 7 วัน {last.summary.inactive_7d} · ร่างติดตามใหม่ {last.summary.followups_created}</> : 'ยังไม่เคยรันงานรายวัน'}
         </div>
       )}
-      <div className="alert alert-info">ตอนนี้ช่องทางส่งจริงมีแค่แชตจำลอง ลีดช่องทางอื่นจะขึ้นสถานะ "อนุมัติแล้ว" รอเชื่อมต่อช่องทาง</div>
+      {quota?.enabled && quota.known && !quota.unlimited && (
+        <div className={`alert ${quota.remaining <= quota.reserve ? 'alert-warn' : 'alert-info'}`} role="status">
+          โควตาข้อความ LINE เดือนนี้: ใช้ไป {quota.used} จาก {quota.limit} (เหลือ {quota.remaining}) ระบบเก็บ {quota.reserve} ข้อความไว้ให้เซลส์ตอบมือ
+          {quota.remaining <= quota.reserve && ' ตอนนี้โควตาเหลือน้อย ร่างที่อนุมัติแล้วจะรอจนกว่าจะขึ้นเดือนใหม่หรือเพิ่มโควตา'}
+        </div>
+      )}
+      <div className="alert alert-info">แชตจำลองส่งทันทีเมื่ออนุมัติ ลีดช่องทาง LINE ระบบส่งให้เองภายในราว 30 วินาที (ตรวจความยินยอมอีกครั้งก่อนส่ง และดูโควตาข้อความของ LINE) ช่องทางอื่นยังรอการเชื่อมต่อในสถานะ "อนุมัติแล้ว (รอส่ง)" ถ้า LINE ส่งไม่สำเร็จ 3 ครั้งจะขึ้นเป็น "ส่งไม่สำเร็จ"</div>
       <div className="toolbar">
         <div className="seg" role="group" aria-label="สถานะ">
           {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'seg-on' : ''} aria-pressed={tab === k} onClick={() => setTab(k)}>{l}<span className="seg-n">{all ? count(k) : ''}</span></button>)}

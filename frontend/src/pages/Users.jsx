@@ -133,7 +133,7 @@ export default function Users() {
 }
 
 function InviteModal({ onClose, onCreated }) {
-  const [f, setF] = useState({ name: '', email: '', role: 'marketing' })
+  const [f, setF] = useState({ name: '', job_title: '', email: '', role: 'marketing' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -143,7 +143,7 @@ function InviteModal({ onClose, onCreated }) {
     e.preventDefault()
     setError(''); setBusy(true)
     try {
-      const r = await api('POST', '/users', { name: f.name.trim(), email: f.email.trim(), role: f.role })
+      const r = await api('POST', '/users', { name: f.name.trim(), job_title: f.job_title.trim(), email: f.email.trim(), role: f.role })
       setResult(r); onCreated()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
@@ -163,6 +163,7 @@ function InviteModal({ onClose, onCreated }) {
       <form className="form" onSubmit={submit} noValidate>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
         <label className="field"><span>ชื่อที่แสดง</span><input value={f.name} onChange={set('name')} maxLength={100} placeholder="เช่น ณภัทร มั่นคง" /></label>
+        <label className="field"><span>ตำแหน่ง</span><input value={f.job_title} onChange={set('job_title')} maxLength={100} placeholder="เช่น Marketing Manager" /></label>
         <label className="field"><span>อีเมล</span><input type="email" value={f.email} onChange={set('email')} placeholder="name@company.com" /></label>
         <fieldset className="field roles">
           <legend>บทบาท</legend>
@@ -184,6 +185,7 @@ function InviteModal({ onClose, onCreated }) {
 
 function EditModal({ user, isSelf, onClose, onSaved }) {
   const [name, setName] = useState(user.name || '')
+  const [title, setTitle] = useState(user.job_title || '')
   const [role, setRole] = useState(user.role)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -192,6 +194,7 @@ function EditModal({ user, isSelf, onClose, onSaved }) {
     setError(''); setBusy(true)
     const body = {}
     if (name.trim() !== (user.name || '')) body.name = name.trim()
+    if (title.trim() !== (user.job_title || '')) body.job_title = title.trim()
     if (role !== user.role) body.role = role
     if (!Object.keys(body).length) { onClose(); return }
     try { await api('PATCH', `/users/${user.id}`, body); onSaved() } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -202,6 +205,7 @@ function EditModal({ user, isSelf, onClose, onSaved }) {
         {error && <div className="alert alert-error" role="alert">{error}</div>}
         <div className="muted small">{user.email}</div>
         <label className="field"><span>ชื่อที่แสดง</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} /></label>
+        <label className="field"><span>ตำแหน่ง</span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} /></label>
         <label className="field"><span>บทบาท</span>
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             {Object.entries(ROLES).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}

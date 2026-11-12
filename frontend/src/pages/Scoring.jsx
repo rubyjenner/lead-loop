@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { EVENTS, Modal, RULE_CATEGORY, Toast, canManage, eventLabel } from '../ui.jsx'
+import { EVENTS, Modal, RULE_CATEGORY, Toast, canManage, eventLabel, personLabel, timeAgo } from '../ui.jsx'
 import { LevelTag } from './Leads.jsx'
 
 const summary = (c) => {
@@ -66,10 +66,10 @@ export default function Scoring() {
       {rules && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>กฎ</th><th>เมื่อเกิดเหตุการณ์</th><th className="right">คะแนน</th><th>นับ</th><th>ใช้งาน</th>{manage && <th />}</tr></thead>
+            <thead><tr><th>กฎ</th><th>เมื่อเกิดเหตุการณ์</th><th className="right">คะแนน</th><th>นับ</th><th>ใช้งาน</th><th>แก้ไขล่าสุด</th>{manage && <th />}</tr></thead>
             <tbody>
               {groups.map(([cat, list]) => [
-                <tr key={cat} className="catrow"><td colSpan={manage ? 6 : 5}>{RULE_CATEGORY[cat]}</td></tr>,
+                <tr key={cat} className="catrow"><td colSpan={manage ? 7 : 6}>{RULE_CATEGORY[cat]}</td></tr>,
                 ...list.map((r) => (
                   <tr key={r.id} className={r.active ? '' : 'row-off'}>
                     <td>{r.name}{r.is_core && <span className="tag tag-warn" style={{ marginLeft: 8 }}>กฎหลัก</span>}{r.description && <div className="muted small">{r.description}</div>}</td>
@@ -79,6 +79,7 @@ export default function Scoring() {
                     <td>
                       <label className="checks"><input type="checkbox" checked={r.active} disabled={!manage || r.is_core} onChange={() => toggle(r)} aria-label={`เปิดใช้ ${r.name}`} /></label>
                     </td>
+                    <td className="small muted" title={r.updated_at || ''}>{r.updated_at ? <>{timeAgo(r.updated_at)}{r.updated_by && <div>{personLabel(r.updated_by_name, r.updated_by_title, r.updated_by)}</div>}</> : '-'}</td>
                     {manage && <td className="actions">
                       <button className="btn btn-quiet" onClick={() => setEdit(r)}>แก้ไข</button>
                       {!r.is_core && <button className="btn btn-quiet" onClick={() => remove(r)}>ลบ</button>}
