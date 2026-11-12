@@ -105,6 +105,11 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 			}
 			return client.reply(ctx, ev.ReplyToken, linePlain("ถอนความยินยอมแล้วค่ะ ระบบจะไม่ประมวลผลข้อมูลของคุณอีก หากต้องการคุยต่อ พิมพ์ข้อความมาได้เลย"))
 		}
+		if lineIsProductCmd(text) {
+			if sent, err := ch.offerProducts(ctx, client, ev.ReplyToken, ext, campaign); sent || err != nil {
+				return err
+			}
+		}
 		res, err := ch.handleIncoming(ctx, lineChannel, ext, text)
 		if err != nil {
 			return err
@@ -112,9 +117,18 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 		if res.StaffMode { // a person handles this customer: the text was kept for them, the bot stays quiet
 			return nil
 		}
-		return client.reply(ctx, ev.ReplyToken, lineReply(res))
+		msgs := []lineMessage{lineReply(res)}
+		if !res.NeedsConsent && chatHasEvent(res.Detected, "asked_details") { // the bot introduces the product: show its picture
+			if u := ch.productPicture(ctx, res.LeadID); u != "" {
+				msgs = append(msgs, lineImageMessage(u))
+			}
+		}
+		return client.reply(ctx, ev.ReplyToken, msgs...)
 
 	case "postback":
+		if cid, ok := lineProductCampaign(ev.Postback.Data); ok {
+			return ch.pickProduct(ctx, client, ev.ReplyToken, ext, cid, campaign)
+		}
 		switch linePostbackAction(ev.Postback.Data) {
 		case "consent":
 			name := cleanDisplayName(client.displayName(ctx, ext)) // read only now that the person accepted
@@ -124,7 +138,11 @@ func (ch *chatChannelAPI) handleLineEvent(ctx context.Context, client *lineClien
 			if _, _, err := ch.grantConsent(ctx, lineChannel, ext, name, campaign, false, chatConsentVersion(), lineCreatedBy); err != nil {
 				return err
 			}
-			return client.reply(ctx, ev.ReplyToken, lineText(chatReplyConsentThanks))
+			thanks := lineText(chatReplyConsentThanks)
+			if choices, err := ch.productChoices(ctx, campaign); err == nil && len(choices) > 0 {
+				thanks = lineProductMenu(chatReplyConsentThanks+"\n\nสนใจสินค้าตัวไหนคะ เลือกได้เลย หรือพิมพ์ถามมาได้ค่ะ", choices)
+			}
+			return client.reply(ctx, ev.ReplyToken, thanks)
 		case "decline":
 			return client.reply(ctx, ev.ReplyToken, linePlain("ไม่เป็นไรค่ะ ยังไม่มีการเก็บข้อมูลของคุณ หากเปลี่ยนใจ พิมพ์ข้อความมาได้ทุกเมื่อ"))
 		}
@@ -155,4 +173,63 @@ func (ch *chatChannelAPI) withdrawConsent(ctx context.Context, channel, extID st
 			id, chatConsentVersion())
 	}
 	return err
+}
+
+// offerProducts shows the product buttons. sent=false when there is nothing to offer or the person has not
+// consented yet (then the normal flow, which asks for consent, runs instead).
+func (ch *chatChannelAPI) offerProducts(ctx context.Context, client *lineClient, token, ext string, campaign *int64) (bool, error) {
+	id, found, err := ch.findLead(ctx, lineChannel, ext)
+	if err != nil || !found {
+		return false, err
+	}
+	if ok, err := ch.leads.leadAllowsProcessing(ctx, id); err != nil || !ok {
+		return false, err
+	}
+	if ch.staffMode(ctx, id) { // a person handles this customer: the bot stays quiet
+		return true, nil
+	}
+	choices, err := ch.productChoices(ctx, campaign)
+	if err != nil || len(choices) == 0 {
+		return false, err
+	}
+	return true, client.reply(ctx, token, lineProductMenu("สนใจสินค้าตัวไหนคะ เลือกได้เลยค่ะ", choices))
+}
+
+// pickProduct: the customer pressed a product button.
+func (ch *chatChannelAPI) pickProduct(ctx context.Context, client *lineClient, token, ext string, campaignID int64, campaign *int64) error {
+	id, found, err := ch.findLead(ctx, lineChannel, ext)
+	if err != nil {
+		return err
+	}
+	if found {
+		if found, err = ch.leads.leadAllowsProcessing(ctx, id); err != nil {
+			return err
+		}
+	}
+	if !found { // not consented (or withdrawn): same rule as every message
+		res, err := ch.handleIncoming(ctx, lineChannel, ext, "")
+		if err != nil {
+			return err
+		}
+		return client.reply(ctx, token, lineReply(res))
+	}
+	if ch.staffMode(ctx, id) {
+		return nil
+	}
+	ok, err := ch.chooseProduct(ctx, id, campaignID, campaign)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return client.reply(ctx, token, linePlain("สินค้านี้ยังไม่เปิดให้เลือกในตอนนี้ค่ะ พิมพ์ \"สินค้า\" เพื่อดูรายการอีกครั้ง"))
+	}
+	product, err := ch.loadProduct(ctx, id)
+	if err != nil {
+		return err
+	}
+	msgs := []lineMessage{lineText(lineIntro(product))}
+	if u := ch.productPicture(ctx, id); u != "" {
+		msgs = append(msgs, lineImageMessage(u))
+	}
+	return client.reply(ctx, token, msgs...)
 }
