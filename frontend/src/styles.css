@@ -349,3 +349,6 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 @media (max-width:860px){.topbar{margin-top:0}.topbar-name{display:none}}
 
 a.theme-icon{text-decoration:none}
+
+.me-link{grid-column:1 / -1;display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:var(--r-sm);padding:4px;margin:-4px}
+.me-link:hover,.me-link.active{background:var(--ink-2)}

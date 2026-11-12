@@ -73,11 +73,13 @@ function Shell() {
           )}
         </nav>
         <div className="me">
-          <div className="avatar avatar-lg" aria-hidden="true">{initials}</div>
-          <div className="me-text">
-            <div className="me-name">{user.name || user.email}</div>
-            <div className="me-role">{ROLES[user.role]?.label || user.role}{user.job_title ? ` · ${user.job_title}` : ''}</div>
-          </div>
+          <NavLink to="/profile" className="me-link" title={t('me.profile', 'โปรไฟล์และการตั้งค่า')}>
+            <div className="avatar avatar-lg" aria-hidden="true">{initials}</div>
+            <div className="me-text">
+              <div className="me-name">{user.name || user.email}</div>
+              <div className="me-role">{ROLES[user.role]?.label || user.role}{user.job_title ? ` · ${user.job_title}` : ''}</div>
+            </div>
+          </NavLink>
           <button className="btn btn-quiet" onClick={() => logout()}>{t('me.logout', 'ออกจากระบบ')}</button>
         </div>
       </aside>
