@@ -82,7 +82,7 @@ export default function CampaignDetail() {
   const left = usage ? Math.max(0, usage.per_user_daily_limit - usage.used_today) : null
   return (
     <div className="page">
-      <p className="crumb"><Link to="/campaigns" className="link">แคมเปญ</Link> / #{camp.id} {camp.name}</p>
+      <p className="crumb"><Link to="/campaigns" className="link">แคมเปญ</Link> / {camp.name}</p>
       <header className="page-head">
         <div>
           <h1>{camp.name}</h1>
@@ -90,12 +90,15 @@ export default function CampaignDetail() {
             {camp.product_image_url && <img className="prod-thumb" src={camp.product_image_url} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
             <span className="muted">
               {camp.product_name ? `สินค้า: ${camp.product_name}` : 'ยังไม่ได้ผูกสินค้า (AI จะเขียนแบบทั่วไป)'}
-              {canEdit && camp.product_id && <button className="icon-btn" title="แก้ไขสินค้า" aria-label="แก้ไขสินค้า" onClick={openProduct}>✎</button>}
+              
             </span>
           </div>
           <p className="muted small">สร้างโดย {personLabel(camp.created_by_name, camp.created_by_title, camp.created_by)} · {timeAgo(camp.created_at)}</p>
         </div>
-        <span className={`tag tag-${camp.status}`}>{CAMPAIGN_STATUS[camp.status] || camp.status}</span>
+        <div className="actions">
+          {canEdit && camp.product_id && <button className="btn btn-quiet" onClick={openProduct}>แก้ไขสินค้า</button>}
+          <span className={`tag tag-${camp.status}`}>{CAMPAIGN_STATUS[camp.status] || camp.status}</span>
+        </div>
       </header>
 
       <dl className="facts">

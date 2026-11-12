@@ -30,7 +30,7 @@ export default function Campaigns() {
     if (st && c.status !== st) return false
     const needle = q.trim().toLowerCase()
     if (!needle) return true
-    return [`#${c.id}`, String(c.id), c.name, c.goal, product(c.product_id)?.name, c.created_by_name, c.created_by].some((v) => (v || '').toLowerCase().includes(needle))
+    return [c.name, c.goal, product(c.product_id)?.name, c.created_by_name, c.created_by].some((v) => (v || '').toLowerCase().includes(needle))
   })
 
   return (
@@ -63,18 +63,16 @@ export default function Campaigns() {
       {list && shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>เลขที่</th><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>สร้างโดย</th><th>สร้างเมื่อ</th></tr></thead>
+            <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>สร้างโดย</th><th>สร้างเมื่อ</th><th /></tr></thead>
             <tbody>
               {shown.map((c) => (
                 <tr key={c.id}>
-                  <td className="muted nowrap">#{c.id}</td>
                   <td><Link className="link" to={`/campaigns/${c.id}`}>{c.name}</Link></td>
                   <td>
                     {product(c.product_id) ? (
                       <span className="prodcell">
                         {product(c.product_id).image_url && <img className="prod-thumb" src={product(c.product_id).image_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
                         <span>{product(c.product_id).name}</span>
-                        {canEditCampaign(user, c.created_by) && <button className="icon-btn" title="แก้ไขสินค้า" aria-label={`แก้ไขสินค้า ${product(c.product_id).name}`} onClick={() => setEditing(product(c.product_id))}>✎</button>}
                       </span>
                     ) : <span className="muted">ไม่ได้ผูกสินค้า</span>}
                   </td>
@@ -83,6 +81,7 @@ export default function Campaigns() {
                   <td><span className={`tag tag-${c.status}`}>{CAMPAIGN_STATUS[c.status] || c.status}</span></td>
                   <td className="small">{personLabel(c.created_by_name, c.created_by_title, c.created_by)}</td>
                   <td className="muted nowrap" title={c.created_at}>{timeAgo(c.created_at)}</td>
+                  <td className="actions">{product(c.product_id) && canEditCampaign(user, c.created_by) && <button className="btn btn-quiet" onClick={() => setEditing(product(c.product_id))}>แก้ไขสินค้า</button>}</td>
                 </tr>
               ))}
             </tbody>

@@ -294,8 +294,6 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 .ad-text { margin: 0; padding: 12px 14px; white-space: pre-wrap; }
 .ad-edit { padding: 12px 14px; }
 .reject-box { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
-.icon-btn { background: transparent; border: 0; color: var(--ink-3); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 14px; line-height: 1; opacity: .7; }
-.icon-btn:hover, .icon-btn:focus-visible { opacity: 1; background: rgba(14, 124, 134, .12); }
 .prodcell { display: inline-flex; align-items: center; gap: 10px; }
 .prod-thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; border: 1px solid var(--line); background: var(--sunk-2); }
 .theme-btn { grid-column: 1 / -1; justify-content: flex-start; padding-left: 0; }

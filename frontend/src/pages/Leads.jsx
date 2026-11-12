@@ -68,7 +68,7 @@ export default function Leads() {
                   <td><ScoreCell score={l.score} /></td>
                   <td><LevelTag level={l.level} /></td>
                   <td><span className={`tag tag-l-${l.status}`}>{LEAD_STATUS[l.status] || l.status}</span></td>
-                  <td>{l.campaign_name ? <><Link className="link" to={`/campaigns/${l.campaign_id}`}>#{l.campaign_id} {l.campaign_name}</Link>{l.product_name && <div className="muted small">{l.product_name}</div>}</> : <span className="muted">-</span>}</td>
+                  <td>{l.campaign_name ? <><Link className="link" to={`/campaigns/${l.campaign_id}`}>{l.campaign_name}</Link>{l.product_name && <div className="muted small">{l.product_name}</div>}</> : <span className="muted">-</span>}</td>
                   <td>{LEAD_CHANNELS[l.channel] || l.channel}</td>
                   <td className="nowrap">{owners[l.id] ? owners[l.id].name : <span className="muted">-</span>}</td>
                   <td className="right nowrap">{l.budget != null ? baht(l.budget) : <span className="muted">ไม่ระบุ</span>}</td>
