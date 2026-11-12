@@ -8,7 +8,7 @@ import { CHANNELS, CONTENT_STATUS, Modal, SOURCE, canEditCampaign, fmtDateTime, 
 //   another marketing/admin user -> approve or reject (a reason is required to reject)
 //   sales -> view only
 // props: c (content row), image (product picture url or ''), campaignCreator (email), onChanged(msg), onError(text)
-export default function ContentCard({ c, image, campaignCreator, user, onChanged, onError, showCampaign, reviewOnly }) {
+export default function ContentCard({ c, image, campaignCreator, productChangedAt, user, onChanged, onError, showCampaign, reviewOnly }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(c.body)
   const [busy, setBusy] = useState(false)
