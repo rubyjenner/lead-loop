@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api.js'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
-import { LoopMark, ROLES } from './ui.jsx'
+import { LoopMark, ROLES, ThemeToggle } from './ui.jsx'
 import Login from './pages/Login.jsx'
 import SetPassword from './pages/SetPassword.jsx'
 import ChangePassword from './pages/ChangePassword.jsx'
@@ -73,8 +73,9 @@ function Shell() {
           <div className="avatar avatar-lg" aria-hidden="true">{initials}</div>
           <div className="me-text">
             <div className="me-name">{user.name || user.email}</div>
-            <div className="me-role">{ROLES[user.role]?.label || user.role}</div>
+            <div className="me-role">{ROLES[user.role]?.label || user.role}{user.job_title ? ` · ${user.job_title}` : ''}</div>
           </div>
+          <ThemeToggle />
           <button className="btn btn-quiet" onClick={() => logout()}>ออกจากระบบ</button>
         </div>
       </aside>

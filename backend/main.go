@@ -331,8 +331,9 @@ func main() {
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
 			        c.publish_at, c.created_at, c.generated_by, c.created_by,
-			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, k.name
-			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id
+			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, k.name,
+			        k.created_by, COALESCE(p.image_url, '')
+			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id LEFT JOIN products p ON p.id = k.product_id
 			 WHERE ($1 = '' OR c.status::text = $1)
 			 ORDER BY c.id DESC LIMIT 200`, status)
 		if err != nil {
@@ -341,7 +342,9 @@ func main() {
 		defer rows.Close()
 		type row struct {
 			Content
-			CampaignName string `json:"campaign_name"`
+			CampaignName      string  `json:"campaign_name"`
+			CampaignCreatedBy *string `json:"campaign_created_by"`
+			ProductImageURL   string  `json:"product_image_url"`
 		}
 		who := loadPeople(c.UserContext(), pool)
 		out := []row{}
@@ -349,7 +352,8 @@ func main() {
 			var x row
 			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
 				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
-				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.CampaignName); err != nil {
+				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.CampaignName,
+				&x.CampaignCreatedBy, &x.ProductImageURL); err != nil {
 				return serverError(c, err)
 			}
 			who.fill(&x.Content)

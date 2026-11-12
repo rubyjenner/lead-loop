@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { CAMPAIGN_STATUS, CHANNELS, CONTENT_STATUS, SOURCE, Toast, baht, timeAgo } from '../ui.jsx'
+import { CAMPAIGN_STATUS, CHANNELS, SOURCE, Toast, baht, canEditCampaign, personLabel, timeAgo } from '../ui.jsx'
+import ContentCard from './ContentCard.jsx'
+import ImagePicker from './ImagePicker.jsx'
+import { FactsModal } from './Campaigns.jsx'
 
 const FALLBACK = {
   quota: 'โควตา AI ของคุณวันนี้ใช้ครบแล้ว ระบบใช้เทมเพลตแทน (พรุ่งนี้ใช้ AI ได้อีก)',
@@ -13,8 +16,8 @@ const FALLBACK = {
 export default function CampaignDetail() {
   const { id } = useParams()
   const { user } = useAuth()
-  const canEdit = user.role === 'admin' || user.role === 'marketing'
   const [camp, setCamp] = useState(null)
+  const canEdit = canEditCampaign(user, camp?.created_by) // the creator or an admin
   const [contents, setContents] = useState([])
   const [usage, setUsage] = useState(null)
   const [past, setPast] = useState(null) // totals of earlier campaigns, used by the next AI plan
@@ -24,6 +27,8 @@ export default function CampaignDetail() {
   const [channel, setChannel] = useState('line')
   const [count, setCount] = useState(3)
   const [toast, setToast] = useState('')
+  const [aiImage, setAiImage] = useState('') // optional picture for the next AI request only
+  const [editProduct, setEditProduct] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -46,20 +51,22 @@ export default function CampaignDetail() {
 
   async function makePlan() {
     setBusy('plan'); setNotice(null)
-    try { const r = await api('POST', `/campaigns/${id}/plan`); setNotice(describe(r, 'แผน')); await load() }
+    try { const r = await api('POST', `/campaigns/${id}/plan`, aiImage ? { image: aiImage } : undefined); setNotice(describe(r, 'แผน')); await load() }
     catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
   }
   async function makeContents() {
     setBusy('contents'); setNotice(null)
     try {
-      const r = await api('POST', `/campaigns/${id}/generate-contents`, { channel, count: Number(count) })
+      const r = await api('POST', `/campaigns/${id}/generate-contents`, { channel, count: Number(count), ...(aiImage ? { image: aiImage } : {}) })
       setNotice(describe(r, 'ร่าง')); await load()
     } catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
   }
-  async function submit(c) {
-    setBusy(c.id)
-    try { await api('POST', `/contents/${c.id}/submit`); setToast('ส่งขออนุมัติแล้ว'); await load() }
-    catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
+  async function openProduct() {
+    try {
+      const [p, facts] = await Promise.all([api('GET', '/products'), api('GET', '/product-facts').catch(() => [])])
+      const x = p.find((q) => q.id === camp.product_id)
+      if (x) setEditProduct({ ...x, ...(facts.find((f) => f.id === x.id) || {}) })
+    } catch (e) { setNotice({ kind: 'error', text: e.message }) }
   }
 
   if (error) return <div className="page"><div className="alert alert-error" role="alert">{error}</div><Link to="/campaigns" className="link">กลับไปรายการแคมเปญ</Link></div>
@@ -72,7 +79,14 @@ export default function CampaignDetail() {
       <header className="page-head">
         <div>
           <h1>{camp.name}</h1>
-          <p className="muted">{camp.product_name ? `สินค้า: ${camp.product_name}` : 'ยังไม่ได้ผูกสินค้า (AI จะเขียนแบบทั่วไป)'}</p>
+          <div className="prodcell">
+            {camp.product_image_url && <img className="prod-thumb" src={camp.product_image_url} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+            <span className="muted">
+              {camp.product_name ? `สินค้า: ${camp.product_name}` : 'ยังไม่ได้ผูกสินค้า (AI จะเขียนแบบทั่วไป)'}
+              {canEdit && camp.product_id && <button className="btn btn-quiet" onClick={openProduct}>แก้ไขสินค้า</button>}
+            </span>
+          </div>
+          <p className="muted small">สร้างโดย {personLabel(camp.created_by_name, camp.created_by_title, camp.created_by)} · {timeAgo(camp.created_at)}</p>
         </div>
         <span className={`tag tag-${camp.status}`}>{CAMPAIGN_STATUS[camp.status] || camp.status}</span>
       </header>
@@ -83,6 +97,18 @@ export default function CampaignDetail() {
         <div><dt>งบประมาณ</dt><dd>{baht(camp.budget)}</dd></div>
       </dl>
 
+      {!canEdit && (
+        <div className="alert alert-info" role="note">
+          {user.role === 'sales' ? 'เซลส์ดูแคมเปญได้อย่างเดียว' : 'คุณไม่ใช่ผู้สร้างแคมเปญนี้ จึงแก้ไขไม่ได้ ถ้าเป็นผู้อนุมัติ คุณอนุมัติหรือปฏิเสธคอนเทนต์ที่รออนุมัติได้ในแต่ละการ์ดด้านล่าง'}
+        </div>
+      )}
+      {canEdit && user.role === 'admin' && camp.created_by && camp.created_by.toLowerCase() !== user.email.toLowerCase() && (
+        <div className="alert alert-warn" role="note">คุณเป็นแอดมินที่แก้แคมเปญของคนอื่น ทุกการแก้ไขจะถูกบันทึกในบันทึกการใช้งาน</div>
+      )}
+      {canEdit && (
+        <ImagePicker value={aiImage} onChange={setAiImage} label="แนบรูปให้ AI ดูรอบนี้ (ไม่บังคับ)"
+          hint={camp.product_image_url ? 'ถ้าไม่แนบ AI จะใช้รูปสินค้าที่อัปโหลดไว้ รูปที่แนบใช้เฉพาะครั้งนี้ ไม่ถูกบันทึก' : 'รูปที่แนบใช้เฉพาะครั้งนี้ ไม่ถูกบันทึก และจะถูกส่งให้ผู้ให้บริการ AI'} />
+      )}
       {notice && <div className={`alert alert-${notice.kind === 'error' ? 'error' : notice.kind === 'warn' ? 'warn' : 'info'}`} role="status">{notice.text}</div>}
 
       <section className="block">
@@ -126,26 +152,13 @@ export default function CampaignDetail() {
         {contents.length === 0 && <p className="muted">ยังไม่มีคอนเทนต์ ให้ AI ร่างหลายแบบ แล้วส่งขออนุมัติเฉพาะแบบที่ใช้ได้</p>}
         <ul className="cards">
           {contents.map((c) => (
-            <li key={c.id} className="card">
-              <div className="card-top">
-                <span className="tag">{CHANNELS[c.channel] || c.channel}</span>
-                <span className={`tag tag-c-${c.status}`}>{CONTENT_STATUS[c.status] || c.status}</span>
-                <span className={`src src-${c.generated_by}`}>{SOURCE[c.generated_by] || c.generated_by}</span>
-              </div>
-              <p className="card-body">{c.body}</p>
-              <div className="card-meta muted small">สร้างโดย {c.created_by || 'ไม่ระบุ'} · {timeAgo(c.created_at)}</div>
-              {canEdit && (c.status === 'draft' || c.status === 'rejected') && (
-                <div className="card-actions">
-                  <button className="btn btn-primary" disabled={!!busy} onClick={() => submit(c)}>{busy === c.id ? 'กำลังส่ง…' : c.status === 'rejected' ? 'ส่งขออนุมัติอีกครั้ง' : 'ส่งขออนุมัติ'}</button>
-                </div>
-              )}
-              {c.status === 'pending_approval' && (
-                <div className="card-actions"><Link to="/approvals" className="link">ไปหน้าอนุมัติ</Link><span className="muted small">ผู้อนุมัติต้องเป็นคนอื่นที่ไม่ใช่ผู้สร้าง</span></div>
-              )}
-            </li>
+            <ContentCard key={c.id} c={c} image={camp.product_image_url} campaignCreator={camp.created_by} user={user}
+              onError={(t) => setNotice(t ? { kind: 'error', text: t } : null)}
+              onChanged={async (msg) => { if (msg) setToast(msg); await load() }} />
           ))}
         </ul>
       </section>
+      {editProduct && <FactsModal product={editProduct} onClose={() => setEditProduct(null)} onSaved={async () => { setEditProduct(null); setToast('บันทึกข้อมูลสินค้าแล้ว'); await load() }} />}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>
   )

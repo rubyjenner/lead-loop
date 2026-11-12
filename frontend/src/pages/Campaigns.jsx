@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { CAMPAIGN_STATUS, Modal, Toast, baht, timeAgo } from '../ui.jsx'
+import { CAMPAIGN_STATUS, Modal, Toast, baht, canEditCampaign, personLabel, timeAgo } from '../ui.jsx'
 
 export default function Campaigns() {
   const { user } = useAuth()
@@ -44,45 +44,31 @@ export default function Campaigns() {
       {list && list.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>สร้างเมื่อ</th></tr></thead>
+            <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>สร้างโดย</th><th>สร้างเมื่อ</th></tr></thead>
             <tbody>
               {list.map((c) => (
                 <tr key={c.id}>
                   <td><Link className="link" to={`/campaigns/${c.id}`}>{c.name}</Link></td>
-                  <td>{product(c.product_id)?.name || <span className="muted">ไม่ได้ผูกสินค้า</span>}</td>
+                  <td>
+                    {product(c.product_id) ? (
+                      <span className="prodcell">
+                        {product(c.product_id).image_url && <img className="prod-thumb" src={product(c.product_id).image_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+                        <span>{product(c.product_id).name}
+                          {canEditCampaign(user, c.created_by) && <button className="btn btn-quiet" onClick={() => setEditing(product(c.product_id))}>แก้ไขสินค้า</button>}
+                        </span>
+                      </span>
+                    ) : <span className="muted">ไม่ได้ผูกสินค้า</span>}
+                  </td>
                   <td className="clip">{c.goal || <span className="muted">-</span>}</td>
                   <td className="right nowrap">{baht(c.budget)}</td>
                   <td><span className={`tag tag-${c.status}`}>{CAMPAIGN_STATUS[c.status] || c.status}</span></td>
-                  <td className="muted nowrap">{timeAgo(c.created_at)}</td>
+                  <td className="small">{personLabel(c.created_by_name, c.created_by_title, c.created_by)}</td>
+                  <td className="muted nowrap" title={c.created_at}>{timeAgo(c.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-      {products.length > 0 && (
-        <section className="panel" style={{ marginTop: 18 }}>
-          <h2>สินค้าและข้อมูลที่บอตตอบลูกค้าได้</h2>
-          <p className="muted small">บอตตอบลูกค้าจากข้อมูลที่กรอกไว้เท่านั้น ช่องไหนว่าง บอตจะส่งคำถามนั้นให้เจ้าหน้าที่ตอบ ไม่เดาเอง</p>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>สินค้า</th><th className="right">ราคา</th><th>ข้อมูลครบ</th><th></th></tr></thead>
-              <tbody>
-                {products.map((p) => {
-                  const n = factCount(p)
-                  return (
-                    <tr key={p.id}>
-                      <td>{p.name}</td>
-                      <td className="right nowrap">{p.price != null ? baht(p.price) : <span className="muted">-</span>}</td>
-                      <td><span className={`tag ${n === FACT_TOTAL ? 'tag-l-closed' : 'tag-l-new'}`}>{n}/{FACT_TOTAL}</span></td>
-                      <td className="right">{canEdit && <button className="btn btn-quiet" onClick={() => setEditing(p)}>แก้ไขสินค้า</button>}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
       )}
       {editing && <FactsModal product={editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); setToast('บันทึกข้อมูลสินค้าแล้ว') }} />}
       {modal === 'campaign' && (
@@ -163,7 +149,7 @@ function CampaignModal({ products, onClose, onCreated }) {
   )
 }
 
-const FACT_FIELDS = [
+export const FACT_FIELDS = [
   ['variants', 'รุ่น / ขนาด / สี', 'เช่น ไซส์ S M L, สีขาว ดำ'],
   ['product_type', 'แบบสินค้า', 'เช่น คอกลม แขนสั้น'],
   ['after_sales', 'บริการหลังการขาย', 'เช่น รับประกัน 1 ปี เปลี่ยนไซส์ได้ใน 7 วัน'],
@@ -171,7 +157,7 @@ const FACT_FIELDS = [
   ['installment_info', 'ผ่อนได้ไหม', 'เช่น ผ่อน 0% 3 เดือนผ่านบัตรเครดิต หรือ ไม่รับผ่อน'],
 ]
 const FACT_TOTAL = FACT_FIELDS.length + 1 // + price
-const factCount = (p) => FACT_FIELDS.filter(([k]) => (p[k] || '').trim()).length + (p.price != null && p.price !== '' ? 1 : 0)
+export const factCount = (p) => FACT_FIELDS.filter(([k]) => (p[k] || '').trim()).length + (p.price != null && p.price !== '' ? 1 : 0)
 
 function FactsFields({ f, set }) {
   return FACT_FIELDS.map(([k, label, ph]) => (
@@ -180,7 +166,7 @@ function FactsFields({ f, set }) {
   ))
 }
 
-function FactsModal({ product, onClose, onSaved }) {
+export function FactsModal({ product, onClose, onSaved }) {
   const [f, setF] = useState(() => ({
     ...Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])),
     name: product.name || '', description: product.description || '', price: product.price ?? '', brand_info: product.brand_info || '',
@@ -224,7 +210,7 @@ function FactsModal({ product, onClose, onSaved }) {
   )
 }
 
-function readAsDataURL(file) {
+export function readAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
     r.onload = () => resolve(String(r.result))

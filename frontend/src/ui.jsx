@@ -95,9 +95,13 @@ export function timeAgo(iso) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000
   if (s < 90) return 'เมื่อสักครู่'
   if (s < 3600) return `${Math.round(s / 60)} นาทีที่แล้ว`
-  if (s < 86400) return `${Math.round(s / 3600)} ชั่วโมงที่แล้ว`
-  if (s < 86400 * 14) return `${Math.round(s / 86400)} วันที่แล้ว`
-  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+  if (s < 86400) return `${Math.floor(s / 3600)} ชั่วโมงที่แล้ว`
+  return fmtDate(iso) // after one day: day / month / year
+}
+
+export function fmtDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export function fmtDateTime(iso) {
@@ -134,3 +138,39 @@ export const EVENTS = {
 }
 export const eventLabel = (k) => EVENTS[k] || k
 export const canManage = (user) => user.role === 'admin' || user.role === 'marketing'
+
+// "Full name · position", falling back to the e-mail when the person has no name yet
+export function personLabel(name, title, email) {
+  const n = (name || '').trim()
+  if (!n) return email || 'ไม่ระบุ'
+  return title ? `${n} · ${title}` : n
+}
+
+// Same rule as the server (backend/roles.go): the creator or an admin edits; old campaigns without a creator are open to marketing
+export function canEditCampaign(user, creatorEmail) {
+  if (!user) return false
+  if (user.role === 'admin') return true
+  if (user.role !== 'marketing') return false
+  return !creatorEmail || creatorEmail.toLowerCase() === (user.email || '').toLowerCase()
+}
+
+// ---- light / dark theme ----
+const THEME_KEY = 'leadloop-theme'
+export function currentTheme() {
+  let t = null
+  try { t = localStorage.getItem(THEME_KEY) } catch { /* private mode */ }
+  if (t === 'light' || t === 'dark') return t
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+export function applyTheme(t) {
+  document.documentElement.dataset.theme = t
+  try { localStorage.setItem(THEME_KEY, t) } catch { /* ignore */ }
+}
+export function ThemeToggle() {
+  const [t, setT] = useState(currentTheme)
+  return (
+    <button className="btn btn-quiet theme-btn" aria-label="สลับธีมสว่าง/มืด" onClick={() => { const n = t === 'dark' ? 'light' : 'dark'; applyTheme(n); setT(n) }}>
+      {t === 'dark' ? '☀ ธีมสว่าง' : '☾ ธีมมืด'}
+    </button>
+  )
+}

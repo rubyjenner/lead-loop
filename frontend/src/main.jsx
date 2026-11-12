@@ -8,6 +8,9 @@ import '@fontsource/ibm-plex-sans-thai/600.css'
 import './styles.css'
 import App from './App.jsx'
 import { AuthProvider } from './auth.jsx'
+import { applyTheme, currentTheme } from './ui.jsx'
+
+applyTheme(currentTheme())
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
