@@ -202,20 +202,21 @@ func main() {
 		}
 		var x struct {
 			Campaign
-			Plan            string  `json:"plan"`
-			PlanGeneratedBy string  `json:"plan_generated_by"`
-			ProductName     *string `json:"product_name"`
-			ProductImageURL *string `json:"product_image_url"`
+			Plan             string     `json:"plan"`
+			PlanGeneratedBy  string     `json:"plan_generated_by"`
+			ProductName      *string    `json:"product_name"`
+			ProductImageURL  *string    `json:"product_image_url"`
+			ProductChangedAt *time.Time `json:"product_changed_at"`
 		}
 		err = pool.QueryRow(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
 			        c.created_at, c.plan, c.plan_generated_by, p.name, p.image_url,
-			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,'')
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), p.facts_changed_at
 			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id
 			 LEFT JOIN users u ON lower(u.email) = lower(c.created_by) WHERE c.id=$1`, id,
 		).Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status,
 			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName, &x.ProductImageURL,
-			&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle)
+			&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.ProductChangedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
@@ -332,7 +333,7 @@ func main() {
 			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
 			        c.publish_at, c.created_at, c.generated_by, c.created_by,
 			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, k.name,
-			        k.created_by, COALESCE(p.image_url, '')
+			        k.created_by, COALESCE(p.image_url, ''), p.facts_changed_at
 			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id LEFT JOIN products p ON p.id = k.product_id
 			 WHERE ($1 = '' OR c.status::text = $1)
 			 ORDER BY c.id DESC LIMIT 200`, status)
@@ -342,9 +343,10 @@ func main() {
 		defer rows.Close()
 		type row struct {
 			Content
-			CampaignName      string  `json:"campaign_name"`
-			CampaignCreatedBy *string `json:"campaign_created_by"`
-			ProductImageURL   string  `json:"product_image_url"`
+			CampaignName      string     `json:"campaign_name"`
+			CampaignCreatedBy *string    `json:"campaign_created_by"`
+			ProductImageURL   string     `json:"product_image_url"`
+			ProductChangedAt  *time.Time `json:"product_changed_at"`
 		}
 		who := loadPeople(c.UserContext(), pool)
 		out := []row{}
@@ -353,7 +355,7 @@ func main() {
 			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
 				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
 				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.CampaignName,
-				&x.CampaignCreatedBy, &x.ProductImageURL); err != nil {
+				&x.CampaignCreatedBy, &x.ProductImageURL, &x.ProductChangedAt); err != nil {
 				return serverError(c, err)
 			}
 			who.fill(&x.Content)

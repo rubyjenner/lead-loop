@@ -60,7 +60,8 @@ func initProductFacts(ctx context.Context, pool *pgxpool.Pool) error {
 		ADD COLUMN IF NOT EXISTS product_type TEXT NOT NULL DEFAULT '',
 		ADD COLUMN IF NOT EXISTS after_sales TEXT NOT NULL DEFAULT '',
 		ADD COLUMN IF NOT EXISTS payment_methods TEXT NOT NULL DEFAULT '',
-		ADD COLUMN IF NOT EXISTS installment_info TEXT NOT NULL DEFAULT ''`); err != nil {
+		ADD COLUMN IF NOT EXISTS installment_info TEXT NOT NULL DEFAULT '',
+		ADD COLUMN IF NOT EXISTS facts_changed_at TIMESTAMPTZ`); err != nil {
 		return err
 	}
 	if err := seedChatTopics(ctx, pool); err != nil {
@@ -156,7 +157,9 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if in.Price != nil && *in.Price < 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "price must not be negative"})
 		}
-		tag, err := pool.Exec(c.Context(), `UPDATE products SET name=$1, description=$2, price=$3, brand_info=$4 WHERE id=$5`,
+		tag, err := pool.Exec(c.Context(), `UPDATE products SET
+			facts_changed_at = CASE WHEN (name, description, price, brand_info) IS DISTINCT FROM ($1::text, $2::text, $3::numeric, $4::text) THEN now() ELSE facts_changed_at END,
+			name=$1, description=$2, price=$3, brand_info=$4 WHERE id=$5`,
 			strings.TrimSpace(in.Name), strings.TrimSpace(in.Description), in.Price, strings.TrimSpace(in.BrandInfo), id)
 		if err != nil {
 			return serverError(c, err)
@@ -181,8 +184,10 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if !ok {
 			return c.Status(400).JSON(fiber.Map{"error": "แต่ละช่องยาวได้ไม่เกิน 500 ตัวอักษร"})
 		}
-		tag, err := pool.Exec(c.Context(), `UPDATE products SET variants=$1, product_type=$2, after_sales=$3,
-			payment_methods=$4, installment_info=$5 WHERE id=$6`,
+		tag, err := pool.Exec(c.Context(), `UPDATE products SET
+			facts_changed_at = CASE WHEN (variants, product_type, after_sales, payment_methods, installment_info)
+			  IS DISTINCT FROM ($1::text, $2::text, $3::text, $4::text, $5::text) THEN now() ELSE facts_changed_at END,
+			variants=$1, product_type=$2, after_sales=$3, payment_methods=$4, installment_info=$5 WHERE id=$6`,
 			f.Variants, f.ProductType, f.AfterSales, f.PaymentMethods, f.InstallmentInfo, id)
 		if err != nil {
 			return serverError(c, err)

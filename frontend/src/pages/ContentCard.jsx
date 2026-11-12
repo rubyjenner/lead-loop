@@ -48,6 +48,8 @@ export default function ContentCard({ c, image, campaignCreator, user, onChanged
     } catch { onError('ดาวน์โหลดรูปไม่ได้ (ถ้าเพิ่งตั้งค่า ให้เปิด PUBLIC_CHAT_ENABLED=1 แล้วลองใหม่)') }
   }
 
+  const changedAt = c.product_changed_at || productChangedAt
+  const staleFacts = (c.status === 'approved' || c.status === 'published') && c.approved_at && changedAt && new Date(changedAt) > new Date(c.approved_at)
   const editable = mayEdit && (c.status === 'draft' || c.status === 'rejected' || c.status === 'pending_approval' || c.status === 'approved' || c.status === 'published')
   return (
     <li className="card">
@@ -77,6 +79,12 @@ export default function ContentCard({ c, image, campaignCreator, user, onChanged
           <strong>เหตุผลที่ถูกปฏิเสธ</strong>
           <span>{c.reject_reason}</span>
           <span className="small muted">โดย {personLabel(c.rejected_by_name, c.rejected_by_title, c.rejected_by)}{c.rejected_at ? ` · ${timeAgo(c.rejected_at)}` : ''}</span>
+        </div>
+      )}
+
+      {staleFacts && (
+        <div className="alert alert-warn" role="note">
+          ข้อมูลสินค้าถูกแก้ไขหลังอนุมัติคอนเทนต์นี้ ({timeAgo(changedAt)}) บอตตอบตามข้อมูลใหม่แล้ว แต่ข้อความโฆษณานี้ยังเป็นของเดิม ตรวจว่าราคาและรายละเอียดยังตรงกัน ถ้าไม่ตรง กด "แก้ข้อความ" เพื่อส่งขออนุมัติใหม่
         </div>
       )}
 

@@ -74,7 +74,9 @@ export default function LeadDetail() {
       <header className="page-head">
         <div>
           <h1>{lead.display_name}</h1>
-          <p className="muted">{LEAD_CHANNELS[lead.channel] || lead.channel} · งบ {lead.budget != null ? baht(lead.budget) : 'ไม่ระบุ'}</p>
+          <p className="muted">
+            {lead.campaign_name ? <>แคมเปญ <Link className="link" to={`/campaigns/${lead.campaign_id}`}>{lead.campaign_name}</Link>{lead.product_name ? ` · สินค้า ${lead.product_name}` : ''} · </> : 'ไม่ผูกแคมเปญ · '}
+            ช่องทาง {LEAD_CHANNELS[lead.channel] || lead.channel} · งบ {lead.budget != null ? baht(lead.budget) : 'ไม่ระบุ'}</p>
         </div>
         <div className="actions"><LevelTag level={lead.level} /><span className={`tag tag-l-${lead.status}`}>{LEAD_STATUS[lead.status] || lead.status}</span></div>
       </header>

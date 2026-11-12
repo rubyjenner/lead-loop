@@ -293,11 +293,14 @@ func (a *leadAPI) createLead(c *fiber.Ctx) error {
 
 func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 	rows, err := a.pool.Query(c.Context(), `
-		SELECT id, campaign_id, display_name, channel, budget::float8, status, score, level, consent_marketing, created_at,
-		  (SELECT count(*) FROM customer_messages m WHERE m.lead_id = leads.id AND m.seen_at IS NULL)
-		FROM leads WHERE anonymized_at IS NULL
-		  AND ($1 = '' OR status = $1) AND ($2 = '' OR level = $2) AND ($3 = '' OR channel = $3)
-		ORDER BY created_at DESC, id DESC LIMIT 200`,
+		SELECT leads.id, leads.campaign_id, leads.display_name, leads.channel, leads.budget::float8, leads.status, leads.score, leads.level,
+		  leads.consent_marketing, leads.created_at,
+		  (SELECT count(*) FROM customer_messages m WHERE m.lead_id = leads.id AND m.seen_at IS NULL),
+		  COALESCE(k.name,''), COALESCE(p.name,'')
+		FROM leads LEFT JOIN campaigns k ON k.id = leads.campaign_id LEFT JOIN products p ON p.id = k.product_id
+		WHERE leads.anonymized_at IS NULL
+		  AND ($1 = '' OR leads.status = $1) AND ($2 = '' OR leads.level = $2) AND ($3 = '' OR leads.channel = $3)
+		ORDER BY leads.created_at DESC, leads.id DESC LIMIT 200`,
 		c.Query("status"), c.Query("level"), c.Query("channel"))
 	if err != nil {
 		return serverError(c, err)
@@ -313,12 +316,14 @@ func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 		var consentM bool
 		var created time.Time
 		var unread int64
-		if err := rows.Scan(&id, &campaign, &name, &channel, &budget, &status, &score, &level, &consentM, &created, &unread); err != nil {
+		var campName, prodName string
+		if err := rows.Scan(&id, &campaign, &name, &channel, &budget, &status, &score, &level, &consentM, &created, &unread, &campName, &prodName); err != nil {
 			return serverError(c, err)
 		}
 		out = append(out, fiber.Map{"id": id, "campaign_id": campaign, "display_name": name, "channel": channel,
 			"budget": budget, "status": status, "score": score, "level": level,
-			"consent_marketing": consentM, "created_at": created, "unread_messages": unread})
+			"consent_marketing": consentM, "created_at": created, "unread_messages": unread,
+			"campaign_name": campName, "product_name": prodName})
 	}
 	return c.JSON(out)
 }
@@ -332,8 +337,12 @@ func (a *leadAPI) getLead(c *fiber.Ctx) error {
 	var score int
 	var budget *float64
 	var consentG, consentM bool
-	err = a.pool.QueryRow(c.Context(), `SELECT display_name, channel, budget::float8, status, score, level, consent_general, consent_marketing
-		FROM leads WHERE id=$1 AND anonymized_at IS NULL`, id).Scan(&name, &channel, &budget, &status, &score, &level, &consentG, &consentM)
+	var campID *int64
+	var campName, prodName string
+	err = a.pool.QueryRow(c.Context(), `SELECT l.display_name, l.channel, l.budget::float8, l.status, l.score, l.level, l.consent_general, l.consent_marketing,
+		  l.campaign_id, COALESCE(k.name,''), COALESCE(p.name,'')
+		FROM leads l LEFT JOIN campaigns k ON k.id = l.campaign_id LEFT JOIN products p ON p.id = k.product_id
+		WHERE l.id=$1 AND l.anonymized_at IS NULL`, id).Scan(&name, &channel, &budget, &status, &score, &level, &consentG, &consentM, &campID, &campName, &prodName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return leadErr(c, 404, "lead not found")
 	}
@@ -355,6 +364,7 @@ func (a *leadAPI) getLead(c *fiber.Ctx) error {
 		why = append(why, fiber.Map{"rule": n, "points": p})
 	}
 	return c.JSON(fiber.Map{"id": id, "display_name": name, "channel": channel, "budget": budget, "status": status,
+		"campaign_id": campID, "campaign_name": campName, "product_name": prodName,
 		"score": score, "level": level, "consent_general": consentG, "consent_marketing": consentM, "score_breakdown": why})
 }
 

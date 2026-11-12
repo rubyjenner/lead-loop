@@ -171,7 +171,7 @@ export default function CampaignDetail() {
         {contents.length === 0 && <p className="muted">ยังไม่มีคอนเทนต์ ให้ AI ร่างหลายแบบ แล้วส่งขออนุมัติเฉพาะแบบที่ใช้ได้</p>}
         <ul className="cards">
           {contents.map((c) => (
-            <ContentCard key={c.id} c={c} image={camp.product_image_url} campaignCreator={camp.created_by} user={user}
+            <ContentCard key={c.id} c={c} image={camp.product_image_url} campaignCreator={camp.created_by} productChangedAt={camp.product_changed_at} user={user}
               onError={(t) => setNotice(t ? { kind: 'error', text: t } : null)}
               onChanged={async (msg) => { if (msg) setToast(msg); await load() }} />
           ))}

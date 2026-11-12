@@ -30,7 +30,7 @@ export default function Leads() {
   useEffect(() => { load() }, [load])
 
   const needle = q.trim().toLowerCase()
-  const shown = (list || []).filter((l) => (!needle || [l.display_name, LEAD_CHANNELS[l.channel], l.channel, LEAD_STATUS[l.status], owners[l.id]?.name].some((v) => (v || '').toLowerCase().includes(needle))) && (!mineOnly || owners[l.id]?.email === user.email))
+  const shown = (list || []).filter((l) => (!needle || [l.display_name, l.campaign_name, l.product_name, LEAD_CHANNELS[l.channel], l.channel, LEAD_STATUS[l.status], owners[l.id]?.name].some((v) => (v || '').toLowerCase().includes(needle))) && (!mineOnly || owners[l.id]?.email === user.email))
   return (
     <div className="page">
       <header className="page-head">
@@ -51,7 +51,7 @@ export default function Leads() {
           <option value="">ทุกสถานะ</option>
           {Object.entries(LEAD_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input className="search" placeholder="ค้นหาชื่อ ช่องทาง สถานะ หรือผู้รับผิดชอบ" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="search" placeholder="ค้นหาชื่อ แคมเปญ สินค้า ช่องทาง สถานะ หรือผู้รับผิดชอบ" value={q} onChange={(e) => setQ(e.target.value)} />
         {(user.role === 'sales' || user.role === 'admin') && <label className="checks"><input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} /> เฉพาะลีดของฉัน</label>}
       </div>
       {error && <div className="alert alert-error" role="alert">{error}</div>}
@@ -60,7 +60,7 @@ export default function Leads() {
       {shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>ชื่อ</th><th>คะแนน</th><th>ระดับ</th><th>สถานะ</th><th>ช่องทาง</th><th>ผู้รับผิดชอบ</th><th className="right">งบ</th><th>เข้ามา</th></tr></thead>
+            <thead><tr><th>ชื่อ</th><th>คะแนน</th><th>ระดับ</th><th>สถานะ</th><th>แคมเปญ / สินค้า</th><th>ช่องทาง</th><th>ผู้รับผิดชอบ</th><th className="right">งบ</th><th>เข้ามา</th></tr></thead>
             <tbody>
               {shown.map((l) => (
                 <tr key={l.id}>
@@ -68,6 +68,7 @@ export default function Leads() {
                   <td><ScoreCell score={l.score} /></td>
                   <td><LevelTag level={l.level} /></td>
                   <td><span className={`tag tag-l-${l.status}`}>{LEAD_STATUS[l.status] || l.status}</span></td>
+                  <td>{l.campaign_name ? <><Link className="link" to={`/campaigns/${l.campaign_id}`}>{l.campaign_name}</Link>{l.product_name && <div className="muted small">{l.product_name}</div>}</> : <span className="muted">-</span>}</td>
                   <td>{LEAD_CHANNELS[l.channel] || l.channel}</td>
                   <td className="nowrap">{owners[l.id] ? owners[l.id].name : <span className="muted">-</span>}</td>
                   <td className="right nowrap">{l.budget != null ? baht(l.budget) : <span className="muted">ไม่ระบุ</span>}</td>
