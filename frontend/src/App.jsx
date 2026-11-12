@@ -88,10 +88,7 @@ function Shell() {
             <button className={lang === 'en' ? 'seg-on' : ''} onClick={() => setLang('en')}>EN</button>
           </div>
           <ThemeToggle compact />
-          <NavLink to="/profile" className="topbar-me" title={t('me.profile', 'โปรไฟล์และการตั้งค่า')}>
-            <span className="avatar" aria-hidden="true">{initials}</span>
-            <span className="topbar-name">{user.name || user.email}</span>
-          </NavLink>
+          <NavLink to="/profile" className="icon-btn theme-icon" aria-label={t('me.profile', 'โปรไฟล์และการตั้งค่า')} title={t('me.profile', 'โปรไฟล์และการตั้งค่า')}>⚙</NavLink>
         </div>
         <Outlet />
       </main>

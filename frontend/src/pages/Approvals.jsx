@@ -57,7 +57,7 @@ export default function Approvals() {
       {rowError && <div className="alert alert-error" role="alert">{rowError}</div>}
       <ul className="cards">
         {shown.map((c) => (
-          <ContentCard key={c.id} c={c} image={c.product_image_url} campaignCreator={c.campaign_created_by} user={user} showCampaign
+          <ContentCard key={c.id} c={c} image={c.product_image_url} campaignCreator={c.campaign_created_by} user={user} showCampaign reviewOnly
             onError={setRowError} onChanged={async (msg) => { if (msg) setToast(msg); await load() }} />
         ))}
       </ul>

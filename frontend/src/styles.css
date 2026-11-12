@@ -236,7 +236,7 @@ textarea:focus { border-color: var(--loop); outline: 2px solid var(--loop-soft);
 .stat{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:14px 16px;text-decoration:none;color:inherit;display:block}
 .stat b{display:block;font-size:28px;line-height:1.2}.stat span{font-size:13px;color:var(--muted)}
 .pts{font-variant-numeric:tabular-nums;font-weight:600}.pts-neg{color:#a1291a}.pts-pos{color:#1d6b3f}
-.catrow td{background:#f6f4ef;font-weight:600;font-size:13px}
+.catrow td{background:var(--loop-soft);color:var(--loop-d);font-weight:600;font-size:13px;letter-spacing:.02em;border-left:3px solid var(--loop)}
 .checks{display:flex;flex-wrap:wrap;gap:6px 14px}.checks label{display:flex;gap:6px;align-items:center;font-size:14px}
 textarea.code{font-family:ui-monospace,Consolas,monospace;font-size:13px;width:100%}
 .bd li{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)}.bd{list-style:none;padding:0;margin:0}
@@ -324,7 +324,7 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 [data-theme="dark"] .pts-neg { color: #f4a196; }
 [data-theme="dark"] .pts-pos { color: #7fd6a8; }
 [data-theme="dark"] .bar { background: #2a3f46; }
-[data-theme="dark"] .catrow td { background: var(--sunk); }
+[data-theme="dark"] .catrow td { background: rgba(127,209,211,.14); color: #9fe0e2; border-left-color: #7fd1d3; }
 [data-theme="dark"] .role-on { background: var(--loop-soft); }
 [data-theme="dark"] .chat-log { background: var(--sunk); }
 [data-theme="dark"] .bubble-bot, [data-theme="dark"] .thread-in, [data-theme="dark"] .chip { background: var(--paper); color: var(--text); }
@@ -347,3 +347,5 @@ textarea{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;
 .topbar-name{font-size:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .narrow{max-width:560px}.pref-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 @media (max-width:860px){.topbar{margin-top:0}.topbar-name{display:none}}
+
+a.theme-icon{text-decoration:none}

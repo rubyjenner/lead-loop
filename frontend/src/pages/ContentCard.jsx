@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { CHANNELS, CONTENT_STATUS, Modal, SOURCE, canEditCampaign, fmtDateTime, personLabel, timeAgo } from '../ui.jsx'
 
@@ -9,7 +8,7 @@ import { CHANNELS, CONTENT_STATUS, Modal, SOURCE, canEditCampaign, fmtDateTime, 
 //   another marketing/admin user -> approve or reject (a reason is required to reject)
 //   sales -> view only
 // props: c (content row), image (product picture url or ''), campaignCreator (email), onChanged(msg), onError(text)
-export default function ContentCard({ c, image, campaignCreator, user, onChanged, onError, showCampaign }) {
+export default function ContentCard({ c, image, campaignCreator, user, onChanged, onError, showCampaign, reviewOnly }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(c.body)
   const [busy, setBusy] = useState(false)
@@ -88,10 +87,10 @@ export default function ContentCard({ c, image, campaignCreator, user, onChanged
       </div>
 
       <div className="card-actions">
-        <button className="btn btn-quiet" onClick={copyText}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}</button>
-        {image && <button className="btn btn-quiet" onClick={downloadImage}>ดาวน์โหลดรูป</button>}
-        {editable && !editing && <button className="btn btn-quiet" disabled={busy} onClick={() => { setText(c.body); setEditing(true) }}>แก้ข้อความ</button>}
-        {mayEdit && (c.status === 'draft' || c.status === 'rejected') && !editing && (
+        {!reviewOnly && <button className="btn btn-quiet" onClick={copyText}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}</button>}
+        {!reviewOnly && image && <button className="btn btn-quiet" onClick={downloadImage}>ดาวน์โหลดรูป</button>}
+        {!reviewOnly && editable && !editing && <button className="btn btn-quiet" disabled={busy} onClick={() => { setText(c.body); setEditing(true) }}>แก้ข้อความ</button>}
+        {!reviewOnly && mayEdit && (c.status === 'draft' || c.status === 'rejected') && !editing && (
           <button className="btn btn-primary" disabled={busy} onClick={submit}>{c.status === 'rejected' ? 'ส่งขออนุมัติอีกครั้ง' : 'ส่งขออนุมัติ'}</button>
         )}
         {c.status === 'pending_approval' && mayDecide && (
@@ -102,7 +101,7 @@ export default function ContentCard({ c, image, campaignCreator, user, onChanged
         )}
       </div>
       {c.status === 'pending_approval' && !mayDecide && user.role !== 'sales' && (
-        <p className="muted small">⏳ รอเพื่อนร่วมทีมอนุมัติ (ผู้สร้างอนุมัติเองไม่ได้) · <Link to="/approvals" className="link">ไปหน้าอนุมัติ</Link></p>
+        <p className="muted small">⏳ รอเพื่อนร่วมทีมอนุมัติ (ผู้สร้างอนุมัติเองไม่ได้)</p>
       )}
       {c.status === 'pending_approval' && user.role === 'sales' && <p className="muted small">รอผู้อนุมัติ (เซลส์ดูได้อย่างเดียว)</p>}
 
