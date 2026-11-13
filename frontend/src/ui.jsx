@@ -41,13 +41,20 @@ export function LoopDiagram() {
 
 export function Modal({ title, onClose, children, wide }) {
   const ref = useRef(null)
+  // Keep the latest onClose in a ref. Parents usually pass a new arrow function on every render,
+  // and an effect that depends on onClose re-ran on every keystroke and pulled focus out of the text box.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
   useEffect(() => {
     const prev = document.activeElement
-    const onKey = (e) => e.key === 'Escape' && onClose()
+    const onKey = (e) => e.key === 'Escape' && closeRef.current()
     document.addEventListener('keydown', onKey)
-    ref.current?.querySelector('input,select,button')?.focus()
+    // Move focus into the dialog once, when it opens, unless a field inside already has it (autoFocus)
+    if (!ref.current?.contains(document.activeElement)) {
+      ref.current?.querySelector('textarea,input,select,button')?.focus()
+    }
     return () => { document.removeEventListener('keydown', onKey); prev?.focus?.() }
-  }, [onClose])
+  }, [])
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal${wide ? ' modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
@@ -160,11 +167,13 @@ export function impactNote(changed, impact) {
   return parts.length ? `${head} · กระทบ: ${parts.join(', ')}` : head
 }
 
-// Same rule as the server (backend/roles.go): the creator or an admin edits; old campaigns without a creator are open to marketing
+// Who sees the edit controls in the web app: the creator, and anyone (admin or marketing) on old campaigns that have no creator.
+// An admin does NOT get edit controls on somebody else's campaign: they review it (approve or reject) and the creator fixes it.
+// NOTE: this only hides the buttons. backend/roles.go (mayEditCampaign) still lets an admin edit any campaign through the API
+// (audited as admin_edit_other_campaign) until that rule is changed there too.
 export function canEditCampaign(user, creatorEmail) {
   if (!user) return false
-  if (user.role === 'admin') return true
-  if (user.role !== 'marketing') return false
+  if (user.role !== 'admin' && user.role !== 'marketing') return false
   return !creatorEmail || creatorEmail.toLowerCase() === (user.email || '').toLowerCase()
 }
 

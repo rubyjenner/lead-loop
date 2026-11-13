@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { LEAD_CHANNELS, Toast, canManage, fmtDateTime, personLabel, timeAgo } from '../ui.jsx'
+import { LEAD_CHANNELS, Modal, Toast, canManage, fmtDateTime, personLabel, timeAgo } from '../ui.jsx'
 import { LevelTag } from './Leads.jsx'
 
 const TABS = [['pending_approval', 'รออนุมัติ'], ['sent', 'ส่งแล้ว'], ['approved', 'อนุมัติแล้ว (รอส่ง)'], ['failed', 'ส่งไม่สำเร็จ'], ['rejected', 'ถูกปฏิเสธ']]
@@ -18,6 +18,7 @@ export default function Followups() {
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState('')
   const [quota, setQuota] = useState(null) // LINE monthly message quota
+  const [draftFor, setDraftFor] = useState(null)
   const manage = canManage(user)
 
   const load = useCallback(async () => {
@@ -54,7 +55,7 @@ export default function Followups() {
           <h1>ติดตามลีด</h1>
           <p className="muted">ระบบตรวจลีดที่เงียบไปทุกวันเวลา 09:00 แล้วร่างข้อความติดตามให้ ต้องมีคนกดอนุมัติก่อนส่งทุกครั้ง และส่งได้เฉพาะลีดที่ยินยอมรับข่าวสารการตลาด</p>
         </div>
-        {user.role === 'admin' && <button className="btn btn-primary" onClick={runNow} disabled={running}>{running ? 'กำลังตรวจ…' : 'รันงานรายวันตอนนี้'}</button>}
+        <div className="actions">{manage && <button className="btn btn-primary" onClick={() => setDraftFor({})}>ร่างข้อความใหม่</button>}{user.role === 'admin' && <button className="btn btn-quiet" onClick={runNow} disabled={running}>{running ? 'กำลังตรวจ…' : 'รันงานรายวันตอนนี้'}</button>}</div>
       </header>
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {user.role === 'admin' && last !== undefined && (
@@ -84,11 +85,12 @@ export default function Followups() {
               <span className="muted small">ครั้งที่ {f.seq} · {LEAD_CHANNELS[f.channel] || f.channel} · {timeAgo(f.created_at)}</span>
             </div>
             <p className="card-body">{f.body}</p>
-            <p className="muted small">ร่างโดย: ระบบ (งานรายวัน ใช้ข้อความแม่แบบ ไม่ใช่ AI) · ต้องมีคนอนุมัติก่อนส่งทุกครั้ง</p>
+            <p className="muted small">ร่างโดย: {f.source === 'daily_job' || f.created_by === 'system:daily_job' ? 'ระบบ (งานรายวัน ใช้ข้อความแม่แบบ ไม่ใช่ AI)' : personLabel(f.created_by_name, f.created_by_title, f.created_by)} · ต้องมีคนอนุมัติก่อนส่งทุกครั้ง</p>
             {f.decided_by && <p className="muted small">{f.status === 'rejected' ? 'ปฏิเสธโดย' : 'อนุมัติโดย'} {f.decided_by.startsWith('system:') ? 'ระบบ (ลูกค้าถอนความยินยอม)' : personLabel(f.decided_by_name, f.decided_by_title, f.decided_by)} · {fmtDateTime(f.decided_at)}</p>}
             {rowError[f.id] && <div className="alert alert-error" role="alert">{rowError[f.id]}</div>}
             {f.status === 'pending_approval' && manage && (
               <div className="actions">
+                <button className="btn btn-quiet" onClick={() => setDraftFor({ id: f.lead_id, name: f.display_name })}>ร่างข้อความติดตาม</button>
                 <button className="btn btn-primary" disabled={busy === f.id} onClick={() => act(f, 'approve', (r) => (r.status === 'sent' ? 'ส่งข้อความแล้ว (แชตจำลอง)' : 'อนุมัติแล้ว'))}>อนุมัติและส่ง</button>
                 <button className="btn btn-quiet" disabled={busy === f.id} onClick={() => act(f, 'reject', 'ปฏิเสธแล้ว')}>ปฏิเสธ</button>
               </div>
@@ -96,7 +98,32 @@ export default function Followups() {
           </article>
         ))}
       </div>
+      {draftFor && <DraftFollowup lead={draftFor} onClose={() => setDraftFor(null)} onCreated={async () => { setDraftFor(null); setToast('สร้างข้อความรออนุมัติแล้ว'); await load() }} />}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>
   )
+}
+
+function DraftFollowup({ lead, onClose, onCreated }) {
+  const [body, setBody] = useState('')
+  const [leads, setLeads] = useState([])
+  const [leadID, setLeadID] = useState(lead?.id ? String(lead.id) : '')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (!lead?.id) api('GET', '/leads').then(setLeads).catch((e) => setError(e.message)) }, [lead?.id])
+  const selected = lead?.id ? lead : leads.find((x) => String(x.id) === leadID)
+  async function submit(e) {
+    e.preventDefault(); setError(''); setBusy(true)
+    try { await api('POST', `/leads/${selected.id}/followups`, { body }); onCreated() }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  return <Modal title={lead?.id ? `ร่างข้อความติดตาม · ${lead.name}` : 'ร่างข้อความติดตามใหม่'} onClose={onClose}>
+    <form className="form" onSubmit={submit}>
+      <p className="muted small">ข้อความจะถูกบันทึกเป็นรายการรออนุมัติ ยังไม่ส่งถึงลูกค้าจนกว่าจะมีผู้อนุมัติ และต้องมีความยินยอมด้านการตลาด</p>
+      {!lead?.id && <label className="field"><span>เลือกลีด</span><select value={leadID} onChange={(e) => setLeadID(e.target.value)} required><option value="">เลือกลูกค้า</option>{leads.filter((x) => x.consent_marketing).map((x) => <option key={x.id} value={x.id}>{x.display_name} · {x.channel} · {x.level}</option>)}</select></label>}
+      {error && <div className="alert alert-error">{error}</div>}
+      <label className="field"><span>ข้อความติดตาม</span><textarea rows="5" maxLength={2000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="พิมพ์ข้อความที่ต้องการส่งให้ลูกค้า" autoFocus /></label>
+      <div className="modal-foot"><button type="button" className="btn btn-quiet" onClick={onClose}>ยกเลิก</button><button className="btn btn-primary" disabled={busy || !selected?.id || !body.trim()}>{busy ? 'กำลังบันทึก…' : 'บันทึกร่างเพื่อขออนุมัติ'}</button></div>
+    </form>
+  </Modal>
 }

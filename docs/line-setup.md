@@ -44,3 +44,16 @@ LINE ต้องการ URL แบบ HTTPS สาธารณะ
 - ถ้า LINE ไม่ตอบเลย: เปิด http://127.0.0.1:4040 (ngrok) ดูรหัสของ `POST .../line/webhook` 404 = URL ผิด (ngrok ชี้พอร์ต 5173 ต้องมี `/api` นำหน้า) หรือ LINE ยังไม่เปิดใน API, 401 = Channel secret ไม่ตรง, 200 แต่ไม่ตอบ = ดู `docker compose logs api`
 - ตั้งแต่ลีดเป็น "พร้อมส่งต่อ" หรือ "ส่งต่อเซลส์แล้ว" จนกว่าจะปิดการขายหรือไม่สำเร็จ บอทจะหยุดตอบลูกค้าคนนั้น ข้อความที่ลูกค้าพิมพ์จะถูกเก็บและขึ้นในบทสนทนาของหน้าลีดให้เซลส์ตอบต่อ (มีป้าย "ข้อความใหม่" ในรายการลีด) ลูกค้าพิมพ์ "ถอนความยินยอม" ได้เสมอ และข้อความที่เก็บไว้จะถูกลบเมื่อถอน
 - ข้อความขอความยินยอมเวอร์ชัน v2 แจ้งเรื่องนี้แล้ว ถ้าใช้งานจริงให้ตั้ง `CONSENT_VERSION=v2` ให้ตรงและให้ Deputy Manager ตรวจถ้อยคำ
+
+
+## Store company credentials from the LeadLoop admin screen
+
+For the in-app LINE connection flow, set `INTEGRATION_ENCRYPTION_KEY` on the API server to a private random string of exactly 32 characters. Keep this master key in the server environment / secret manager; it is not the LINE Channel Secret or Access Token. After restarting the API, an admin can open **การเชื่อมต่อระบบ** and submit the company's LINE credentials. LeadLoop verifies the bot profile, encrypts both credentials with AES-256-GCM, and stores the ciphertext in PostgreSQL. The raw credentials are never returned by the status endpoint.
+
+Generate a key in PowerShell with:
+
+```powershell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
+```
+
+Back up the master key securely: without it, stored credentials cannot be decrypted. Do not commit it to Git.

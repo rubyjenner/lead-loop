@@ -284,6 +284,7 @@ func (a *leadAPI) createLead(c *fiber.Ctx) error {
 		return serverError(c, err)
 	}
 	auditUser(c, a.pool, "lead_created", "lead:"+strconv.FormatInt(id, 10), "")
+	notifyRoles(ctx, a.pool, []string{"sales", "admin"}, "lead_new", "มีลีดใหม่เข้ามา", req.DisplayName, "/leads/"+strconv.FormatInt(id, 10), "lead:"+strconv.FormatInt(id, 10))
 	res, err := a.rescore(ctx, id)
 	if err != nil {
 		return serverError(c, err)
@@ -300,7 +301,7 @@ func (a *leadAPI) listLeads(c *fiber.Ctx) error {
 		FROM leads LEFT JOIN campaigns k ON k.id = leads.campaign_id LEFT JOIN products p ON p.id = k.product_id
 		WHERE leads.anonymized_at IS NULL
 		  AND ($1 = '' OR leads.status = $1) AND ($2 = '' OR leads.level = $2) AND ($3 = '' OR leads.channel = $3)
-		ORDER BY leads.created_at DESC, leads.id DESC LIMIT 200`,
+		ORDER BY GREATEST(leads.created_at, COALESCE((SELECT max(cm.created_at) FROM customer_messages cm WHERE cm.lead_id=leads.id), leads.created_at)) DESC, leads.id DESC LIMIT 200`,
 		c.Query("status"), c.Query("level"), c.Query("channel"))
 	if err != nil {
 		return serverError(c, err)

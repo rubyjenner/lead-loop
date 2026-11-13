@@ -37,9 +37,21 @@ const (
 	lineMaxBodySize = 1 << 20
 )
 
-func lineSecret() string { return strings.TrimSpace(os.Getenv("LINE_CHANNEL_SECRET")) }
-func lineToken() string  { return strings.TrimSpace(os.Getenv("LINE_CHANNEL_ACCESS_TOKEN")) }
-func lineEnabled() bool  { return lineSecret() != "" && lineToken() != "" }
+func lineSecret() string {
+	if len(integrationKey()) == 32 {
+		v, _ := storedLineCredentials()
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("LINE_CHANNEL_SECRET"))
+}
+func lineToken() string {
+	if len(integrationKey()) == 32 {
+		_, v := storedLineCredentials()
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("LINE_CHANNEL_ACCESS_TOKEN"))
+}
+func lineEnabled() bool { return lineSecret() != "" && lineToken() != "" }
 
 func registerLineRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	ch := &chatChannelAPI{leads: &leadAPI{pool: pool}}

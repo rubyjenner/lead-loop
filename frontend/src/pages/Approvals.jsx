@@ -4,12 +4,17 @@ import { useAuth } from '../auth.jsx'
 import { Toast } from '../ui.jsx'
 import ContentCard from './ContentCard.jsx'
 
+// "ถูกปฏิเสธ"     = rejected by somebody else (the creator has to fix it)
+// "ที่ฉันปฏิเสธ"  = rejected by me -> waiting for the creator, nothing for me to do
 const TABS = [
   ['pending_approval', 'รออนุมัติ'],
   ['draft', 'ร่าง'],
   ['approved', 'อนุมัติแล้ว'],
   ['rejected', 'ถูกปฏิเสธ'],
+  ['rejected_by_me', 'ที่ฉันปฏิเสธ'],
 ]
+
+const lc = (s) => (s || '').toLowerCase()
 
 export default function Approvals() {
   const { user } = useAuth()
@@ -24,8 +29,16 @@ export default function Approvals() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  const count = (s) => (all || []).filter((c) => c.status === s).length
-  const shown = (all || []).filter((c) => c.status === tab)
+  const me = lc(user.email)
+  const inTab = (c, k) => {
+    if (k === 'rejected') return c.status === 'rejected' && lc(c.rejected_by) !== me
+    if (k === 'rejected_by_me') return c.status === 'rejected' && lc(c.rejected_by) === me
+    return c.status === k
+  }
+  const count = (k) => (all || []).filter((c) => inTab(c, k)).length
+  const shown = (all || []).filter((c) => inTab(c, tab))
+  // sales never approve or reject, so they do not get the "rejected by me" tab
+  const tabs = user.role === 'sales' ? TABS.filter(([k]) => k !== 'rejected_by_me') : TABS
 
   return (
     <div className="page">
@@ -39,7 +52,7 @@ export default function Approvals() {
 
       <div className="toolbar">
         <div className="seg" role="group" aria-label="กรองตามสถานะ">
-          {TABS.map(([k, label]) => (
+          {tabs.map(([k, label]) => (
             <button key={k} className={tab === k ? 'seg-on' : ''} aria-pressed={tab === k} onClick={() => setTab(k)}>
               {label}<span className="seg-n">{all ? count(k) : ''}</span>
             </button>

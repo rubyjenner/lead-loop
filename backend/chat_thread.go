@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,7 +49,17 @@ func (ch *chatChannelAPI) saveCustomerMessage(ctx context.Context, leadID int64,
 		body = string(r[:customerMessageMaxRunes])
 	}
 	_, err := ch.leads.pool.Exec(ctx, `INSERT INTO customer_messages (lead_id, body) VALUES ($1,$2)`, leadID, body)
-	return err
+	if err != nil {
+		return err
+	}
+	var owner, name string
+	_ = ch.leads.pool.QueryRow(ctx, `SELECT COALESCE(assigned_to,''),display_name FROM leads WHERE id=$1`, leadID).Scan(&owner, &name)
+	if owner != "" {
+		notifyUser(ctx, ch.leads.pool, owner, "lead_message", "มีข้อความใหม่จากลูกค้า", name, "/leads/"+strconv.FormatInt(leadID, 10), "lead:"+strconv.FormatInt(leadID, 10)+":message")
+	} else {
+		notifyRoles(ctx, ch.leads.pool, []string{"sales", "admin"}, "lead_message", "มีข้อความใหม่จากลูกค้า", name, "/leads/"+strconv.FormatInt(leadID, 10), "lead:"+strconv.FormatInt(leadID, 10)+":message")
+	}
+	return nil
 }
 
 type threadRow struct {

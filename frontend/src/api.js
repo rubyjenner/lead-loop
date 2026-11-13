@@ -60,3 +60,25 @@ export async function api(method, path, body) {
   const raw = json?.error || `เกิดข้อผิดพลาด (${status})`
   throw new ApiError(status, MESSAGES[raw] || raw, json?.code)
 }
+
+export async function streamNotifications(onEvent, signal) {
+  const headers = {}
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch('/api/notifications/stream', { headers, signal })
+  if (!res.ok || !res.body) throw new Error(`notification stream failed (${res.status})`)
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let boundary
+    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      if (frame.split('\n').some((line) => line.trim() === 'event: notification')) onEvent()
+    }
+  }
+}

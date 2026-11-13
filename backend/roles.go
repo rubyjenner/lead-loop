@@ -16,6 +16,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
@@ -36,10 +37,15 @@ func initRoles(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS edited_by TEXT`,
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ`,
+		`CREATE TABLE IF NOT EXISTS content_submissions (id BIGSERIAL PRIMARY KEY, content_id BIGINT NOT NULL REFERENCES contents(id) ON DELETE CASCADE, version INT NOT NULL, submitted_by TEXT NOT NULL DEFAULT '', submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(content_id, version))`,
+		`CREATE INDEX IF NOT EXISTS content_submissions_latest_idx ON content_submissions(content_id, submitted_at DESC)`,
 		// contents sent before this column existed: the nearest time we know
 		`UPDATE contents SET submitted_at = CASE WHEN status::text = 'pending_approval' THEN COALESCE(edited_at, created_at)
 		   ELSE COALESCE(approved_at, rejected_at, edited_at, created_at) END
 		 WHERE submitted_at IS NULL AND status::text <> 'draft'`,
+		`INSERT INTO content_submissions(content_id,version,submitted_by,submitted_at)
+		 SELECT id,1,COALESCE(edited_by,created_by,''),COALESCE(submitted_at,edited_at,created_at) FROM contents
+		 WHERE status::text <> 'draft' ON CONFLICT(content_id,version) DO NOTHING`,
 	} {
 		if _, err := pool.Exec(ctx, s); err != nil {
 			return err
@@ -289,6 +295,10 @@ func registerContentRuleRoutes(app fiber.Router, pool *pgxpool.Pool) {
 			return c.Status(409).JSON(fiber.Map{"error": "content not found or not pending approval"})
 		}
 		auditUser(c, pool, "content_rejected", "content:"+strconv.Itoa(id), trunc(reason, 300))
+		var creator, campaignName string
+		var campaignID int64
+		_ = pool.QueryRow(c.UserContext(), `SELECT COALESCE(c.created_by,''), k.name, k.id FROM contents c JOIN campaigns k ON k.id=c.campaign_id WHERE c.id=$1`, id).Scan(&creator, &campaignName, &campaignID)
+		notifyUser(c.UserContext(), pool, creator, "content_rejected", "คอนเทนต์ถูกขอให้แก้ไข", campaignName+" · เหตุผล: "+trunc(reason, 180), "/campaigns/"+strconv.FormatInt(campaignID, 10), "content:"+strconv.Itoa(id)+":rejected:"+strconv.FormatInt(time.Now().UnixNano(), 10))
 		return c.JSON(fiber.Map{"status": "rejected"})
 	})
 }

@@ -201,6 +201,7 @@ func (ch *chatChannelAPI) grantConsent(ctx context.Context, channel, extID, disp
 		if _, err := ch.leads.rescore(ctx, id); err != nil {
 			return 0, false, err
 		}
+		notifyRoles(ctx, ch.leads.pool, []string{"sales", "admin"}, "lead_new", "มีลีดใหม่จากช่องทางแชต", displayName, "/leads/"+strconv.FormatInt(id, 10), "lead:"+strconv.FormatInt(id, 10))
 		return id, true, nil
 	}
 	return 0, false, errors.New("could not create lead")

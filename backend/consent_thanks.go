@@ -1,3 +1,3 @@
-﻿package main
+package main
 
-const chatReplyConsentThanks = "ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ"
+// chatReplyConsentThanks is defined in channel_reply.go.

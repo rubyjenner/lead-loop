@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -64,6 +65,8 @@ func initDaily(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_lead_idx ON lead_followups(lead_id)`,
 		`CREATE INDEX IF NOT EXISTS lead_followups_status_idx ON lead_followups(status)`,
+		`ALTER TABLE lead_followups ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT 'system:daily_job'`,
+		`ALTER TABLE lead_followups ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'daily_job'`,
 		// PDPA: a draft must never outlive the customer's consent. When consent is withdrawn, marketing is switched
 		// off ("หยุด"), or the lead is anonymized, every draft that has not been SENT yet (waiting for approval, or
 		// approved but not yet picked up by a channel) is rejected on the spot. A trigger does it, so it holds for
@@ -107,6 +110,7 @@ func registerDailyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	app.Post("/daily-jobs/run", adm, d.runNow)
 	app.Get("/daily-jobs/last", adm, d.last)
 	app.Get("/followups", d.listFollowups)
+	app.Post("/leads/:id/followups", mk, d.createDraft)
 	app.Post("/followups/:id/approve", mk, d.decide("approve"))
 	app.Post("/followups/:id/reject", mk, d.decide("reject"))
 }
@@ -228,6 +232,9 @@ func (d *dailyAPI) runDaily(ctx context.Context, now time.Time) (DailySummary, e
 			sum.Errors++
 			continue
 		}
+		var leadName string
+		_ = d.pool.QueryRow(ctx, `SELECT display_name FROM leads WHERE id=$1`, l.id).Scan(&leadName)
+		notifyRoles(ctx, d.pool, []string{"marketing", "admin"}, "followup_pending", "มีข้อความติดตามลีดรออนุมัติ", leadName, "/followups", "lead:"+strconv.FormatInt(l.id, 10))
 		sum.FollowupsMade++
 	}
 	return sum, nil
@@ -329,9 +336,10 @@ func (d *dailyAPI) listFollowups(c *fiber.Ctx) error {
 	status := c.Query("status")
 	rows, err := d.pool.Query(c.Context(), `
 		SELECT f.id, f.lead_id, l.display_name, l.channel, f.level, f.seq, f.body, f.status,
-		       f.created_at, f.decided_by, f.decided_at, f.sent_at, COALESCE(u.name,''), COALESCE(u.job_title,'')
+		       f.created_at, f.decided_by, f.decided_at, f.sent_at, COALESCE(u.name,''), COALESCE(u.job_title,''), f.created_by, f.source, COALESCE(uc.name,''), COALESCE(uc.job_title,'')
 		FROM lead_followups f JOIN leads l ON l.id = f.lead_id
 		LEFT JOIN users u ON lower(u.email) = lower(f.decided_by)
+		LEFT JOIN users uc ON lower(uc.email) = lower(f.created_by)
 		WHERE l.anonymized_at IS NULL AND ($1 = '' OR f.status = $1)
 		ORDER BY f.created_at DESC, f.id DESC LIMIT 200`, status)
 	if err != nil {
@@ -346,15 +354,58 @@ func (d *dailyAPI) listFollowups(c *fiber.Ctx) error {
 		var created time.Time
 		var by *string
 		var decided, sent *time.Time
-		var byName, byTitle string
-		if err := rows.Scan(&id, &leadID, &name, &channel, &level, &seq, &body, &st, &created, &by, &decided, &sent, &byName, &byTitle); err != nil {
+		var byName, byTitle, createdBy, source, createdByName, createdByTitle string
+		if err := rows.Scan(&id, &leadID, &name, &channel, &level, &seq, &body, &st, &created, &by, &decided, &sent, &byName, &byTitle, &createdBy, &source, &createdByName, &createdByTitle); err != nil {
 			return serverError(c, err)
 		}
 		out = append(out, fiber.Map{"id": id, "lead_id": leadID, "display_name": name, "channel": channel,
 			"level": level, "seq": seq, "body": body, "status": st, "created_at": created,
-			"decided_by": by, "decided_by_name": byName, "decided_by_title": byTitle, "decided_at": decided, "sent_at": sent})
+			"decided_by": by, "decided_by_name": byName, "decided_by_title": byTitle, "decided_at": decided, "sent_at": sent, "created_by": createdBy, "source": source, "created_by_name": createdByName, "created_by_title": createdByTitle})
 	}
 	return c.JSON(out)
+}
+
+// createDraft lets an assigned team member write a follow-up manually; it still requires approval and consent.
+func (d *dailyAPI) createDraft(c *fiber.Ctx) error {
+	leadID, err := c.ParamsInt("id")
+	if err != nil {
+		return leadErr(c, 400, "invalid lead id")
+	}
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := c.BodyParser(&in); err != nil {
+		return leadErr(c, 400, "invalid body")
+	}
+	body := strings.TrimSpace(in.Body)
+	if body == "" || len([]rune(body)) > 2000 {
+		return leadErr(c, 400, "message must be 1-2000 characters")
+	}
+	var level, channel string
+	var consent bool
+	err = d.pool.QueryRow(c.UserContext(), `SELECT level, channel, consent_general AND consent_marketing AND consent_withdrawn_at IS NULL AND anonymized_at IS NULL FROM leads WHERE id=$1`, leadID).Scan(&level, &channel, &consent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return leadErr(c, 404, "lead not found")
+	}
+	if err != nil {
+		return serverError(c, err)
+	}
+	if !consent {
+		return leadErr(c, 409, "lead has not consented to marketing messages")
+	}
+	var seq int
+	if err := d.pool.QueryRow(c.UserContext(), `SELECT COALESCE(max(seq),0)+1 FROM lead_followups WHERE lead_id=$1`, leadID).Scan(&seq); err != nil {
+		return serverError(c, err)
+	}
+	var id int64
+	if err := d.pool.QueryRow(c.UserContext(), `INSERT INTO lead_followups(lead_id,level,seq,body,status,created_by,source) VALUES($1,$2,$3,$4,'pending_approval',$5,'manual') RETURNING id`, leadID, level, seq, body, currentUser(c).Email).Scan(&id); err != nil {
+		return serverError(c, err)
+	}
+	auditUser(c, d.pool, "followup_draft_created", "followup:"+strconv.FormatInt(id, 10), "lead:"+strconv.FormatInt(int64(leadID), 10))
+	var leadName string
+	_ = d.pool.QueryRow(c.UserContext(), `SELECT display_name FROM leads WHERE id=$1`, leadID).Scan(&leadName)
+	notifyApprovers(c.UserContext(), d.pool, []string{currentUser(c).Email}, "followup_pending", "มีข้อความติดตามลีดรออนุมัติ", leadName, "/followups", "followup:"+strconv.FormatInt(id, 10))
+	return c.Status(201).JSON(fiber.Map{"id": id, "status": "pending_approval", "channel": channel, "created_by": currentUser(c).Email})
 }
 
 // decide approves or rejects a draft. Approval re-checks consent right now: a customer who withdrew
@@ -381,6 +432,9 @@ func (d *dailyAPI) decide(action string) fiber.Handler {
 				return leadErr(c, 409, "follow-up not found or not pending approval")
 			}
 			auditUser(c, d.pool, "followup_rejected", "followup:"+strconv.Itoa(id), "")
+			var creator, leadName string
+			_ = d.pool.QueryRow(ctx, `SELECT f.created_by,l.display_name FROM lead_followups f JOIN leads l ON l.id=f.lead_id WHERE f.id=$1`, id).Scan(&creator, &leadName)
+			notifyUser(ctx, d.pool, creator, "followup_rejected", "ข้อความติดตามถูกปฏิเสธ", leadName, "/followups", "followup:"+strconv.Itoa(id)+":rejected")
 			return c.JSON(fiber.Map{"status": "rejected"})
 		}
 		// ONE statement checks consent and approves, so a withdrawal that lands between a separate "check" and a
@@ -415,6 +469,9 @@ func (d *dailyAPI) decide(action string) fiber.Handler {
 			return serverError(c, err)
 		}
 		auditUser(c, d.pool, "followup_"+status, "followup:"+strconv.Itoa(id), "lead:"+strconv.FormatInt(leadID, 10))
+		var creator, leadName string
+		_ = d.pool.QueryRow(ctx, `SELECT f.created_by,l.display_name FROM lead_followups f JOIN leads l ON l.id=f.lead_id WHERE f.id=$1`, id).Scan(&creator, &leadName)
+		notifyUser(ctx, d.pool, creator, "followup_"+status, "ข้อความติดตามได้รับการอนุมัติแล้ว", leadName, "/followups", "followup:"+strconv.Itoa(id)+":"+status)
 		return c.JSON(fiber.Map{"status": status})
 	}
 }

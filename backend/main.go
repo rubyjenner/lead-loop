@@ -24,6 +24,7 @@ type Campaign struct {
 	Budget         float64   `json:"budget"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
+	LastActivityAt time.Time `json:"last_activity_at"`
 	CreatedBy      *string   `json:"created_by"`
 	CreatedByName  string    `json:"created_by_name"`
 	CreatedByTitle string    `json:"created_by_title"`
@@ -53,11 +54,13 @@ type Content struct {
 	GeneratedBy string     `json:"generated_by"` // human, claude, gemini or template
 	CreatedBy   *string    `json:"created_by"`   // who created it (the approver must be someone else)
 
-	RejectReason string     `json:"reject_reason"`
-	RejectedBy   *string    `json:"rejected_by"`
-	RejectedAt   *time.Time `json:"rejected_at"`
-	EditedAt     *time.Time `json:"edited_at"`
-	SubmittedAt  *time.Time `json:"submitted_at"` // when it was last sent for approval (newest first on the approvals page)
+	RejectReason      string     `json:"reject_reason"`
+	RejectedBy        *string    `json:"rejected_by"`
+	RejectedAt        *time.Time `json:"rejected_at"`
+	EditedAt          *time.Time `json:"edited_at"`
+	SubmittedAt       *time.Time `json:"submitted_at"` // when it was last sent for approval (newest first on the approvals page)
+	SubmissionVersion int        `json:"submission_version"`
+	SubmittedBy       string     `json:"submitted_by"`
 
 	// full name and job title of the people above (filled from the users table; empty if unknown)
 	CreatedByName   string `json:"created_by_name,omitempty"`
@@ -97,6 +100,12 @@ func main() {
 		log.Fatal(err)
 	}
 	if err := initRoles(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
+	if err := initNotifications(ctx, pool); err != nil {
+		log.Fatal(err)
+	}
+	if err := initIntegrationStore(ctx, pool); err != nil {
 		log.Fatal(err)
 	}
 
@@ -146,6 +155,8 @@ func main() {
 	registerDailyRoutes(app, pool)
 	registerLineFollowupRoutes(app, pool)
 	registerInboxRoutes(app, pool)
+	registerNotificationRoutes(app, pool)
+	registerIntegrationRoutes(app, pool)
 	registerReportRoutes(app, pool)
 	registerChannelRoutes(app, pool)
 	writers := requireRole("marketing", "admin") // sales and others are read-only
@@ -180,9 +191,10 @@ func main() {
 	app.Get("/campaigns", func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text, c.created_at,
-			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), COALESCE(u.role::text,'')
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), COALESCE(u.role::text,''),
+			 COALESCE((SELECT max(GREATEST(COALESCE(x.submitted_at,x.created_at),COALESCE(x.edited_at,x.created_at))) FROM contents x WHERE x.campaign_id=c.id),c.created_at)
 			 FROM campaigns c LEFT JOIN users u ON lower(u.email) = lower(c.created_by)
-			 ORDER BY c.id DESC`)
+			 ORDER BY last_activity_at DESC, c.id DESC`)
 		if err != nil {
 			return serverError(c, err)
 		}
@@ -191,7 +203,7 @@ func main() {
 		for rows.Next() {
 			var x Campaign
 			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt,
-				&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.CreatedByRole); err != nil {
+				&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.CreatedByRole, &x.LastActivityAt); err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, x)
@@ -338,7 +350,9 @@ func main() {
 			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
 			        c.publish_at, c.created_at, c.generated_by, c.created_by,
 			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, c.submitted_at, k.name,
-			        k.created_by, COALESCE(p.image_url, ''), p.facts_changed_at
+			        k.created_by, COALESCE(p.image_url, ''), p.facts_changed_at,
+			 (SELECT count(*) FROM content_submissions cs WHERE cs.content_id=c.id),
+			 COALESCE((SELECT submitted_by FROM content_submissions cs WHERE cs.content_id=c.id ORDER BY version DESC LIMIT 1),'')
 			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id LEFT JOIN products p ON p.id = k.product_id
 			 WHERE ($1 = '' OR c.status::text = $1)
 			 ORDER BY COALESCE(c.submitted_at, c.created_at) DESC, c.id DESC LIMIT 200`, status)
@@ -360,7 +374,7 @@ func main() {
 			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
 				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
 				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.SubmittedAt, &x.CampaignName,
-				&x.CampaignCreatedBy, &x.ProductImageURL, &x.ProductChangedAt); err != nil {
+				&x.CampaignCreatedBy, &x.ProductImageURL, &x.ProductChangedAt, &x.SubmissionVersion, &x.SubmittedBy); err != nil {
 				return serverError(c, err)
 			}
 			who.fill(&x.Content)
@@ -407,6 +421,10 @@ func main() {
 			return c.Status(409).JSON(fiber.Map{"error": "content not found or not pending approval"})
 		}
 		auditUser(c, pool, "content_approved", "content:"+strconv.Itoa(id), "")
+		var creatorEmail, campaignName string
+		var campaignID int64
+		_ = pool.QueryRow(c.Context(), `SELECT COALESCE(c.created_by,''), k.name, k.id FROM contents c JOIN campaigns k ON k.id=c.campaign_id WHERE c.id=$1`, id).Scan(&creatorEmail, &campaignName, &campaignID)
+		notifyUser(c.Context(), pool, creatorEmail, "content_approved", "คอนเทนต์ได้รับอนุมัติแล้ว", campaignName, "/campaigns/"+strconv.FormatInt(campaignID, 10), "content:"+strconv.Itoa(id)+":approved")
 		return c.JSON(fiber.Map{"status": "approved"})
 	})
 
@@ -436,5 +454,24 @@ func setContentStatus(c *fiber.Ctx, pool *pgxpool.Pool, query, conflictMsg, stat
 		return c.Status(409).JSON(fiber.Map{"error": conflictMsg})
 	}
 	auditUser(c, pool, auditAction, "content:"+strconv.Itoa(id), "")
+	if status == "pending_approval" {
+		var creator, campaignCreator, campaignName string
+		_ = pool.QueryRow(c.Context(), `SELECT COALESCE(x.created_by,''), COALESCE(k.created_by,''), k.name FROM contents x JOIN campaigns k ON k.id=x.campaign_id WHERE x.id=$1`, id).Scan(&creator, &campaignCreator, &campaignName)
+		var version int
+		_ = pool.QueryRow(c.Context(), `SELECT count(*) FROM content_submissions WHERE content_id=$1`, id).Scan(&version)
+		version++
+		if _, err := pool.Exec(c.Context(), `INSERT INTO content_submissions(content_id,version,submitted_by) VALUES($1,$2,$3) ON CONFLICT(content_id,version) DO NOTHING`, id, version, currentUser(c).Email); err != nil {
+			return serverError(c, err)
+		}
+		title := "มีคอนเทนต์รออนุมัติ"
+		body := campaignName + " · ส่งอนุมัติครั้งแรก"
+		kind := "content_pending"
+		if version > 1 {
+			title = "มีคอนเทนต์ส่งแก้ไขรออนุมัติ"
+			body = campaignName + " · ส่งแก้ไขรอบที่ " + strconv.Itoa(version)
+			kind = "content_resubmitted"
+		}
+		notifyApprovers(c.Context(), pool, []string{creator, campaignCreator, currentUser(c).Email}, kind, title, body, "/approvals", "content:"+strconv.Itoa(id)+":submitted:"+strconv.Itoa(version))
+	}
 	return c.JSON(fiber.Map{"status": status})
 }

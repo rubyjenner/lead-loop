@@ -2,6 +2,10 @@
 const now = Date.now()
 const ago = (min) => new Date(now - min * 60000).toISOString()
 let nextId = 8
+let mockNotifications = [
+  { id: 1, kind: 'content_pending', title: 'มีคอนเทนต์รออนุมัติ', body: 'เปิดตัวหูฟังไร้สาย Aria', href: '/approvals', created_at: ago(12), read_at: null },
+  { id: 2, kind: 'content_rejected', title: 'คอนเทนต์ถูกขอให้แก้ไข', body: 'โปรโมชันต้นปี · กรุณาตรวจเหตุผลและแก้ไข', href: '/campaigns', created_at: ago(60 * 3), read_at: ago(60 * 2) },
+]
 let users = [
   { id: 1, email: 'admin@example.com', name: 'อาทิตยา เสาเวียง', role: 'admin', active: true, must_change_password: false, auth_provider: 'local', last_login_at: ago(3), created_at: ago(60 * 24 * 12), pending_link: false },
   { id: 2, email: 'napat.m@vannessplus.com', name: 'ณภัทร มั่นคง', role: 'marketing', active: true, must_change_password: false, auth_provider: 'local', last_login_at: ago(95), created_at: ago(60 * 24 * 9), pending_link: false },
@@ -225,6 +229,11 @@ export async function mockRequest(method, path, body, token) {
     c.status = 'rejected'; return ok({ status: 'rejected' })
   }
 
+  if (method === 'GET' && path.startsWith('/notifications')) return ok({ unread_count: mockNotifications.filter((n) => !n.read_at).length, items: mockNotifications.slice(0, 30) })
+  let notificationMatch = path.match(/^\/notifications\/(\d+)\/read$/)
+  if (method === 'POST' && notificationMatch) { const n = mockNotifications.find((x) => x.id === +notificationMatch[1]); if (n) n.read_at = new Date().toISOString(); return ok({ ok: true }) }
+  if (method === 'POST' && path === '/notifications/read-all') { mockNotifications.forEach((n) => { n.read_at ||= new Date().toISOString() }); return ok({ ok: true }) }
+  if (method === 'GET' && path === '/integrations/status') return ok({ line: { enabled: false, secret_configured: false, token_configured: false, webhook_path: '/api/public/line/webhook' }, web_chat: { enabled: false } })
   if (method === 'GET' && path === '/inbox') {
     return ok({ leads_ready: leads.filter((l) => l.status === 'qualified').length, leads_ready_oldest: ago(60 * 5), contents_to_approve: contents.filter((c) => c.status === 'pending_approval' && c.created_by !== 'admin@example.com').length, followups_to_approve: followups.filter((f) => f.status === 'pending_approval').length, messages_unread: new Set(customerMsgs.filter((x) => !x.seen).map((x) => x.lead_id)).size })
   }

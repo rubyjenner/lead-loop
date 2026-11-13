@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { CHANNELS, CONTENT_STATUS, Modal, SOURCE, canEditCampaign, fmtDateTime, personLabel, timeAgo } from '../ui.jsx'
+import { CHANNELS, CONTENT_STATUS, Modal, SOURCE, canEditCampaign, personLabel, timeAgo } from '../ui.jsx'
 
 // One content draft, shown like a real ad: the product picture on top, the text under it.
 // Who can do what (the server enforces the same rules, see backend/roles.go):
@@ -81,7 +81,7 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
         <div className="alert alert-error reject-box" role="note">
           <strong>เหตุผลที่ถูกปฏิเสธ</strong>
           <span>{c.reject_reason}</span>
-          <span className="small muted">โดย {personLabel(c.rejected_by_name, c.rejected_by_title, c.rejected_by, c.rejected_by_role)}{c.rejected_at ? ` · ${timeAgo(c.rejected_at)}` : ''}</span>
+          <span className="small muted">โดย {personLabel(c.rejected_by_name, c.rejected_by_title, c.rejected_by, c.rejected_by_role)}</span>
         </div>
       )}
 
@@ -98,10 +98,11 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
       )}
 
       <div className="card-meta muted small">
-        สร้างโดย {personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)} · {timeAgo(c.created_at)}
-        {c.status === 'approved' && c.approved_by && <> · อนุมัติโดย {personLabel(c.approved_by_name, c.approved_by_title, c.approved_by, c.approved_by_role)}{c.approved_at ? ` (${fmtDateTime(c.approved_at)})` : ''}</>}
-        {c.status === 'pending_approval' && c.submitted_at && <> · <strong>ส่งขออนุมัติ {timeAgo(c.submitted_at)}</strong></>}
-        {c.edited_at && <> · แก้ไขล่าสุด {timeAgo(c.edited_at)}</>}
+        สร้างโดย {personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)}
+        {c.submitted_at ? <> · <strong>ส่งล่าสุด {timeAgo(c.submitted_at)}</strong></> : <> · สร้างเมื่อ {timeAgo(c.created_at)}</>}
+        {c.submission_version > 1 && <> · <span className="tag tag-c-approved">ส่งแก้ไขรอบ {c.submission_version}</span></>}
+        {c.submitted_by && <> · ส่งโดย {c.submitted_by}</>}
+        {c.status === 'approved' && c.approved_by && <> · อนุมัติโดย {personLabel(c.approved_by_name, c.approved_by_title, c.approved_by, c.approved_by_role)}</>}
       </div>
 
       <div className="card-actions">

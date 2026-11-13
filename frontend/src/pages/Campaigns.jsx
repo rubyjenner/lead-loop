@@ -67,7 +67,7 @@ export default function Campaigns() {
       {list && shown.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>ความคืบหน้า</th><th>สร้างโดย</th><th>สร้างเมื่อ</th><th /></tr></thead>
+            <thead><tr><th>แคมเปญ</th><th>สินค้า</th><th>เป้าหมาย</th><th className="right">งบ</th><th>สถานะ</th><th>ความคืบหน้า</th><th>สร้างโดย</th><th>อัปเดตล่าสุด</th><th /></tr></thead>
             <tbody>
               {shown.map((c) => (
                 <tr key={c.id}>
@@ -85,7 +85,7 @@ export default function Campaigns() {
                   <td><span className={`tag tag-${c.status}`}>{CAMPAIGN_STATUS[c.status] || c.status}</span></td>
                   <td><ProgressCell data={progress[c.id]} /></td>
                   <td className="small">{personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)}</td>
-                  <td className="muted nowrap" title={c.created_at}>{timeAgo(c.created_at)}</td>
+                  <td className="muted nowrap" title={c.last_activity_at || c.created_at}>{timeAgo(c.last_activity_at || c.created_at)}</td>
                   <td className="actions">{product(c.product_id) && canEditCampaign(user, c.created_by) && <button className="btn btn-quiet" onClick={() => setEditing(product(c.product_id))}>แก้ไขสินค้า</button>}</td>
                 </tr>
               ))}

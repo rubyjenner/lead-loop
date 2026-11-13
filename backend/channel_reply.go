@@ -25,10 +25,12 @@ type chatProduct struct {
 }
 
 const (
-	chatReplyUnsub   = "รับทราบค่ะ ระบบจะไม่ส่งข้อความโปรโมชันหรือติดตามคุณอีก หากต้องการสอบถามเพิ่มเติมทักมาได้ทุกเมื่อค่ะ"
-	chatReplyHandoff = "ส่งเรื่องให้ทีมงานแล้วค่ะ จะมีเจ้าหน้าที่ติดต่อกลับ"
-	chatReplyBuy     = "ส่งเรื่องให้ทีมงานยืนยันการสั่งซื้อให้นะคะ จะมีเจ้าหน้าที่ติดต่อกลับค่ะ"
-	chatReplyGeneric = "ขอบคุณที่ทักมาค่ะ ถามราคาหรือรายละเอียดสินค้าได้เลย หรือพิมพ์ \"เจ้าหน้าที่\" หากต้องการคุยกับทีมงาน"
+	chatReplyUnsub   = "รับทราบค่ะ จากนี้ระบบจะไม่ส่งข้อความโปรโมชันหรือติดตามคุณอีกนะคะ หากมีคำถามเมื่อไหร่ ทักมาได้ตลอดเลยค่ะ"
+	chatReplyHandoff = "รับเรื่องไว้แล้วค่ะ เดี๋ยวให้เจ้าหน้าที่ติดต่อกลับโดยเร็วที่สุดนะคะ"
+	chatReplyBuy     = "ขอบคุณที่สนใจนะคะ ส่งเรื่องให้ทีมงานยืนยันการสั่งซื้อแล้วค่ะ เจ้าหน้าที่จะติดต่อกลับโดยเร็วที่สุดนะคะ"
+	chatReplyGeneric = "ขอบคุณที่ทักมานะคะ ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ"
+	// sent right after the customer accepts the consent notice (web chat, LINE and the mock channel share it)
+	chatReplyConsentThanks = "ขอบคุณที่ไว้วางใจนะคะ ตอนนี้ถามเรื่องราคาหรือรายละเอียดสินค้าได้เลยค่ะ หากอยากคุยกับเจ้าหน้าที่ พิมพ์ \"เจ้าหน้าที่\" ได้เลยนะคะ"
 )
 
 var chatHandoffEvents = []string{"requested_human", "requested_callback", "requested_visit"}
@@ -129,24 +131,24 @@ func ComposeChatReply(events []string, p *chatProduct) string {
 	if chatHasEvent(events, "asked_details") {
 		switch {
 		case hasName && desc != "":
-			parts = append(parts, p.Name+": "+desc)
+			parts = append(parts, "รายละเอียดของ "+p.Name+" นะคะ\n"+desc)
 			descShown = true
 		case hasName:
-			parts = append(parts, "สินค้าที่สนใจคือ "+p.Name+" "+chatDefer("รายละเอียดเพิ่มเติม"))
+			parts = append(parts, p.Name+" ค่ะ "+chatDefer("รายละเอียดเพิ่มเติม"))
 		default:
 			parts = append(parts, chatDefer("รายละเอียดสินค้า"))
 		}
 	}
 	if chatHasEvent(events, "asked_price") {
 		if hasName && p.Price != nil && *p.Price > 0 {
-			parts = append(parts, "ราคา "+p.Name+" "+chatBaht(*p.Price)+" บาทค่ะ")
+			parts = append(parts, p.Name+" ราคา "+chatBaht(*p.Price)+" บาทค่ะ")
 		} else {
 			parts = append(parts, chatDefer("ราคา"))
 		}
 	}
 	if chatHasEvent(events, "asked_condition") && !descShown {
 		if desc != "" {
-			parts = append(parts, "ข้อมูลสภาพสินค้า: "+desc)
+			parts = append(parts, "สภาพสินค้าตามข้อมูลที่มีค่ะ: "+desc)
 		} else {
 			parts = append(parts, chatDefer("สภาพสินค้า"))
 		}
@@ -184,7 +186,7 @@ func ComposeChatReply(events []string, p *chatProduct) string {
 	if chatHasEvent(events, "ready_to_buy") {
 		// the customer wants to order: repeat only what is on file, then a person confirms the order
 		if hasName && p.Price != nil && *p.Price > 0 && !chatHasEvent(events, "asked_price") {
-			parts = append(parts, "ราคา "+p.Name+" "+chatBaht(*p.Price)+" บาทค่ะ")
+			parts = append(parts, p.Name+" ราคา "+chatBaht(*p.Price)+" บาทค่ะ")
 		}
 		if v := factOf(p, "payment"); v != "" && !chatHasEvent(events, "asked_payment") {
 			parts = append(parts, "ชำระเงินได้ด้วย: "+v)
