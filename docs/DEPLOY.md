@@ -67,6 +67,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 - [ ] มีผู้อนุมัติอย่างน้อย 2 คน (หน้า "ผู้ใช้" จะเตือนถ้าไม่ครบ)
 - [ ] ล็อกอินผิดซ้ำแล้วได้ 429 จริง (ลิมิตทำงานด้วย IP ผู้ใช้จริง ไม่ใช่ IP ของ Caddy)
 - [ ] Deputy Manager อนุมัติ PDPA แล้ว (ดู `docs/PDPA_SUMMARY.md`) ก่อนใส่ข้อมูลลูกค้าจริง
+- [ ] `.env` มีตัวแปรครบ: ตรวจว่า `docker compose -f docker-compose.prod.yml config` ไม่ฟ้องว่าขาด `JWT_SECRET` หรือ `APP_BASE_URL` และคัดลอกตัวแปรทุกตัวจาก `.env.production.example` มาแล้ว (ตัวแปรของ LINE รูปสินค้า โควตา การมอบหมายลีด การเก็บข้อมูล และเวอร์ชันความยินยอมเพิ่มเข้าชุด prod แล้ว ก่อนหน้านี้ถ้าไม่ได้ส่งผ่าน compose โค้ดจะใช้ค่าเริ่มต้นเงียบๆ เช่น ตั้ง `RETENTION_*` ใน `.env` แต่ API ไม่เห็นค่า)
+- [ ] ถ้าเปิดแชตสาธารณะหรือ LINE: ตั้ง `PUBLIC_CHAT_ENABLED=1` และ `APP_BASE_URL` (หรือ `LINE_IMAGE_BASE_URL`) เป็นที่อยู่ `https://` จริง LINE ดึงรูปสินค้าจากที่อยู่นี้ และ Webhook URL ต้องมี `/api` (`https://<โดเมน>/api/public/line/webhook`)
+- [ ] `RETENTION_INACTIVE_DAYS` และ `RETENTION_WITHDRAWN_DAYS` ยังเป็น `0` (ปิด) จนกว่าบริษัทกำหนดระยะเวลา แล้วให้แอดมินดูตัวอย่างก่อนลบที่หน้าตั้งค่า
 
 ## ข้อจำกัดที่ยังมี
 
