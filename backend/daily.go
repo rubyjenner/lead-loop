@@ -329,8 +329,9 @@ func (d *dailyAPI) listFollowups(c *fiber.Ctx) error {
 	status := c.Query("status")
 	rows, err := d.pool.Query(c.Context(), `
 		SELECT f.id, f.lead_id, l.display_name, l.channel, f.level, f.seq, f.body, f.status,
-		       f.created_at, f.decided_by, f.decided_at, f.sent_at
+		       f.created_at, f.decided_by, f.decided_at, f.sent_at, COALESCE(u.name,''), COALESCE(u.job_title,'')
 		FROM lead_followups f JOIN leads l ON l.id = f.lead_id
+		LEFT JOIN users u ON lower(u.email) = lower(f.decided_by)
 		WHERE l.anonymized_at IS NULL AND ($1 = '' OR f.status = $1)
 		ORDER BY f.created_at DESC, f.id DESC LIMIT 200`, status)
 	if err != nil {
@@ -345,12 +346,13 @@ func (d *dailyAPI) listFollowups(c *fiber.Ctx) error {
 		var created time.Time
 		var by *string
 		var decided, sent *time.Time
-		if err := rows.Scan(&id, &leadID, &name, &channel, &level, &seq, &body, &st, &created, &by, &decided, &sent); err != nil {
+		var byName, byTitle string
+		if err := rows.Scan(&id, &leadID, &name, &channel, &level, &seq, &body, &st, &created, &by, &decided, &sent, &byName, &byTitle); err != nil {
 			return serverError(c, err)
 		}
 		out = append(out, fiber.Map{"id": id, "lead_id": leadID, "display_name": name, "channel": channel,
 			"level": level, "seq": seq, "body": body, "status": st, "created_at": created,
-			"decided_by": by, "decided_at": decided, "sent_at": sent})
+			"decided_by": by, "decided_by_name": byName, "decided_by_title": byTitle, "decided_at": decided, "sent_at": sent})
 	}
 	return c.JSON(out)
 }

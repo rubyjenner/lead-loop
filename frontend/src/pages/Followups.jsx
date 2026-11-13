@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { LEAD_CHANNELS, Toast, canManage, fmtDateTime, timeAgo } from '../ui.jsx'
+import { LEAD_CHANNELS, Toast, canManage, fmtDateTime, personLabel, timeAgo } from '../ui.jsx'
 import { LevelTag } from './Leads.jsx'
 
 const TABS = [['pending_approval', 'รออนุมัติ'], ['sent', 'ส่งแล้ว'], ['approved', 'อนุมัติแล้ว (รอส่ง)'], ['failed', 'ส่งไม่สำเร็จ'], ['rejected', 'ถูกปฏิเสธ']]
@@ -84,7 +84,8 @@ export default function Followups() {
               <span className="muted small">ครั้งที่ {f.seq} · {LEAD_CHANNELS[f.channel] || f.channel} · {timeAgo(f.created_at)}</span>
             </div>
             <p className="card-body">{f.body}</p>
-            {f.decided_by && <p className="muted small">{f.status === 'rejected' ? 'ปฏิเสธโดย' : 'อนุมัติโดย'} {f.decided_by} · {fmtDateTime(f.decided_at)}</p>}
+            <p className="muted small">ร่างโดย: ระบบ (งานรายวัน ใช้ข้อความแม่แบบ ไม่ใช่ AI) · ต้องมีคนอนุมัติก่อนส่งทุกครั้ง</p>
+            {f.decided_by && <p className="muted small">{f.status === 'rejected' ? 'ปฏิเสธโดย' : 'อนุมัติโดย'} {f.decided_by.startsWith('system:') ? 'ระบบ (ลูกค้าถอนความยินยอม)' : personLabel(f.decided_by_name, f.decided_by_title, f.decided_by)} · {fmtDateTime(f.decided_at)}</p>}
             {rowError[f.id] && <div className="alert alert-error" role="alert">{rowError[f.id]}</div>}
             {f.status === 'pending_approval' && manage && (
               <div className="actions">
