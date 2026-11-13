@@ -180,7 +180,7 @@ function FactsFields({ f, set }) {
   ))
 }
 
-function FactsModal({ product, onClose, onSaved }) {
+export function FactsModal({ product, onClose, onSaved }) {
   const [f, setF] = useState(() => ({
     ...Object.fromEntries(FACT_FIELDS.map(([k]) => [k, product[k] || ''])),
     name: product.name || '', description: product.description || '', price: product.price ?? '', brand_info: product.brand_info || '',
