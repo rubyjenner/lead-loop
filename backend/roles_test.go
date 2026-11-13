@@ -85,13 +85,16 @@ func TestCleanReason(t *testing.T) {
 }
 
 func TestPeopleLookup(t *testing.T) {
-	p := people{"a@x.com": {Name: "สมชาย ใจดี", Title: "Marketing Manager"}}
+	p := people{"a@x.com": {Name: "สมชาย ใจดี", Title: "Marketing Manager", Role: "marketing"}}
 	x := Content{CreatedBy: sp("A@X.com"), ApprovedBy: sp("zz@x.com")}
 	p.fill(&x)
 	if x.CreatedByName != "สมชาย ใจดี" || x.CreatedByTitle != "Marketing Manager" {
 		t.Errorf("created: %+v", x)
 	}
-	if x.ApprovedByName != "" {
+	if x.CreatedByRole != "marketing" {
+		t.Errorf("role should be filled: %+v", x)
+	}
+	if x.ApprovedByName != "" || x.ApprovedByRole != "" {
 		t.Errorf("unknown person should stay empty: %+v", x)
 	}
 }

@@ -49,7 +49,9 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
   }
 
   const changedAt = c.product_changed_at || productChangedAt
-  const staleFacts = (c.status === 'approved' || c.status === 'published') && c.approved_at && changedAt && new Date(changedAt) > new Date(c.approved_at)
+  const approvedStale = (c.status === 'approved' || c.status === 'published') && c.approved_at && changedAt && new Date(changedAt) > new Date(c.approved_at)
+  const pendingStale = c.status === 'pending_approval' && changedAt && new Date(changedAt) > new Date(c.submitted_at || c.created_at)
+  const staleFacts = approvedStale || pendingStale
   const editable = mayEdit && (c.status === 'draft' || c.status === 'rejected' || c.status === 'pending_approval' || c.status === 'approved' || c.status === 'published')
   return (
     <li className="card">
@@ -78,19 +80,26 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
         <div className="alert alert-error reject-box" role="note">
           <strong>เหตุผลที่ถูกปฏิเสธ</strong>
           <span>{c.reject_reason}</span>
-          <span className="small muted">โดย {personLabel(c.rejected_by_name, c.rejected_by_title, c.rejected_by)}{c.rejected_at ? ` · ${timeAgo(c.rejected_at)}` : ''}</span>
+          <span className="small muted">โดย {personLabel(c.rejected_by_name, c.rejected_by_title, c.rejected_by, c.rejected_by_role)}{c.rejected_at ? ` · ${timeAgo(c.rejected_at)}` : ''}</span>
         </div>
       )}
 
       {staleFacts && (
         <div className="alert alert-warn" role="note">
-          ข้อมูลสินค้าถูกแก้ไขหลังอนุมัติคอนเทนต์นี้ ({timeAgo(changedAt)}) บอตตอบตามข้อมูลใหม่แล้ว แต่ข้อความโฆษณานี้ยังเป็นของเดิม ตรวจว่าราคาและรายละเอียดยังตรงกัน ถ้าไม่ตรง กด "แก้ข้อความ" เพื่อส่งขออนุมัติใหม่
+          <span>
+            {approvedStale
+              ? <>ข้อมูลสินค้าถูกแก้ไขหลังอนุมัติคอนเทนต์นี้ ({timeAgo(changedAt)}) บอตตอบตามข้อมูลใหม่แล้ว แต่ข้อความโฆษณานี้ยังเป็นของเดิม ตรวจว่าราคาและรายละเอียดยังตรงกัน</>
+              : <>ข้อมูลสินค้าถูกแก้ไขหลังส่งขออนุมัติ ({timeAgo(changedAt)}) ผู้อนุมัติควรตรวจราคาและรายละเอียดในข้อความให้ตรงกับข้อมูลสินค้าล่าสุดก่อนอนุมัติ</>}
+          </span>
+          {!reviewOnly && mayEdit && !editing && <span><button className="btn btn-quiet" onClick={() => { setText(c.body); setEditing(true) }}>แก้ข้อความตอนนี้</button> (แก้แล้วจะส่งขออนุมัติใหม่)</span>}
+          {(reviewOnly || !mayEdit) && <span className="small">ถ้าราคาไม่ตรง ให้ผู้สร้างแคมเปญเป็นคนแก้ข้อความ{c.campaign_id ? <> · <Link className="link" to={`/campaigns/${c.campaign_id}`}>ไปหน้าแคมเปญ</Link></> : null}</span>}
         </div>
       )}
 
       <div className="card-meta muted small">
-        สร้างโดย {personLabel(c.created_by_name, c.created_by_title, c.created_by)} · {timeAgo(c.created_at)}
-        {c.status === 'approved' && c.approved_by && <> · อนุมัติโดย {personLabel(c.approved_by_name, c.approved_by_title, c.approved_by)}{c.approved_at ? ` (${fmtDateTime(c.approved_at)})` : ''}</>}
+        สร้างโดย {personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)} · {timeAgo(c.created_at)}
+        {c.status === 'approved' && c.approved_by && <> · อนุมัติโดย {personLabel(c.approved_by_name, c.approved_by_title, c.approved_by, c.approved_by_role)}{c.approved_at ? ` (${fmtDateTime(c.approved_at)})` : ''}</>}
+        {c.status === 'pending_approval' && c.submitted_at && <> · <strong>ส่งขออนุมัติ {timeAgo(c.submitted_at)}</strong></>}
         {c.edited_at && <> · แก้ไขล่าสุด {timeAgo(c.edited_at)}</>}
       </div>
 

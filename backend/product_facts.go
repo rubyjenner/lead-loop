@@ -24,11 +24,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -157,18 +159,21 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if in.Price != nil && *in.Price < 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "price must not be negative"})
 		}
-		tag, err := pool.Exec(c.Context(), `UPDATE products SET
-			facts_changed_at = CASE WHEN (name, description, price, brand_info) IS DISTINCT FROM ($1::text, $2::text, $3::numeric, $4::text) THEN now() ELSE facts_changed_at END,
-			name=$1, description=$2, price=$3, brand_info=$4 WHERE id=$5`,
-			strings.TrimSpace(in.Name), strings.TrimSpace(in.Description), in.Price, strings.TrimSpace(in.BrandInfo), id)
+		var changed bool
+		err = pool.QueryRow(c.Context(), `WITH old AS (SELECT id, facts_changed_at FROM products WHERE id=$5 FOR UPDATE)
+			UPDATE products p SET
+			facts_changed_at = CASE WHEN (p.name, p.description, p.price, p.brand_info) IS DISTINCT FROM ($1::text, $2::text, $3::numeric, $4::text) THEN now() ELSE p.facts_changed_at END,
+			name=$1, description=$2, price=$3, brand_info=$4 FROM old WHERE p.id = old.id
+			RETURNING p.facts_changed_at IS DISTINCT FROM old.facts_changed_at`,
+			strings.TrimSpace(in.Name), strings.TrimSpace(in.Description), in.Price, strings.TrimSpace(in.BrandInfo), id).Scan(&changed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(404).JSON(fiber.Map{"error": "product not found"})
+		}
 		if err != nil {
 			return serverError(c, err)
 		}
-		if tag.RowsAffected() == 0 {
-			return c.Status(404).JSON(fiber.Map{"error": "product not found"})
-		}
 		auditUser(c, pool, "product_update", "product:"+strconv.FormatInt(id, 10), "")
-		return c.JSON(fiber.Map{"ok": true})
+		return c.JSON(fiber.Map{"ok": true, "changed": changed, "impact": loadProductImpact(c.UserContext(), pool, id)})
 	})
 
 	app.Put("/product-facts/:id", writers, productEditor(pool), func(c *fiber.Ctx) error {
@@ -184,19 +189,46 @@ func registerProductFactsRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if !ok {
 			return c.Status(400).JSON(fiber.Map{"error": "แต่ละช่องยาวได้ไม่เกิน 500 ตัวอักษร"})
 		}
-		tag, err := pool.Exec(c.Context(), `UPDATE products SET
-			facts_changed_at = CASE WHEN (variants, product_type, after_sales, payment_methods, installment_info)
-			  IS DISTINCT FROM ($1::text, $2::text, $3::text, $4::text, $5::text) THEN now() ELSE facts_changed_at END,
-			variants=$1, product_type=$2, after_sales=$3, payment_methods=$4, installment_info=$5 WHERE id=$6`,
-			f.Variants, f.ProductType, f.AfterSales, f.PaymentMethods, f.InstallmentInfo, id)
+		var changed bool
+		err = pool.QueryRow(c.Context(), `WITH old AS (SELECT id, facts_changed_at FROM products WHERE id=$6 FOR UPDATE)
+			UPDATE products p SET
+			facts_changed_at = CASE WHEN (p.variants, p.product_type, p.after_sales, p.payment_methods, p.installment_info)
+			  IS DISTINCT FROM ($1::text, $2::text, $3::text, $4::text, $5::text) THEN now() ELSE p.facts_changed_at END,
+			variants=$1, product_type=$2, after_sales=$3, payment_methods=$4, installment_info=$5 FROM old WHERE p.id = old.id
+			RETURNING p.facts_changed_at IS DISTINCT FROM old.facts_changed_at`,
+			f.Variants, f.ProductType, f.AfterSales, f.PaymentMethods, f.InstallmentInfo, id).Scan(&changed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(404).JSON(fiber.Map{"error": "product not found"})
+		}
 		if err != nil {
 			return serverError(c, err)
 		}
-		if tag.RowsAffected() == 0 {
-			return c.Status(404).JSON(fiber.Map{"error": "product not found"})
-		}
 		auditUser(c, pool, "product_facts_update", "product:"+strconv.FormatInt(id, 10), "")
 		f.ID = id
-		return c.JSON(f)
+		return c.JSON(struct {
+			productFacts
+			Changed bool          `json:"changed"`
+			Impact  productImpact `json:"impact"`
+		}{f, changed, loadProductImpact(c.UserContext(), pool, id)})
 	})
+}
+
+// productImpact: what a change to a product touches, so the editor can be told after saving.
+type productImpact struct {
+	Campaigns int `json:"campaigns"` // campaigns that use the product
+	Approved  int `json:"approved"`  // approved or published contents (their text still has the old facts)
+	Pending   int `json:"pending"`   // waiting for approval (the approver should check them again)
+	Drafts    int `json:"drafts"`    // draft or rejected contents
+}
+
+func loadProductImpact(ctx context.Context, pool *pgxpool.Pool, productID int64) productImpact {
+	var x productImpact
+	_ = pool.QueryRow(ctx, `
+		SELECT count(DISTINCT k.id),
+		       count(c.id) FILTER (WHERE c.status::text IN ('approved','published')),
+		       count(c.id) FILTER (WHERE c.status::text = 'pending_approval'),
+		       count(c.id) FILTER (WHERE c.status::text IN ('draft','rejected'))
+		FROM campaigns k LEFT JOIN contents c ON c.campaign_id = k.id
+		WHERE k.product_id = $1`, productID).Scan(&x.Campaigns, &x.Approved, &x.Pending, &x.Drafts)
+	return x
 }

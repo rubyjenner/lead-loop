@@ -35,6 +35,11 @@ func initRoles(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ`,
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS edited_by TEXT`,
 		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`,
+		`ALTER TABLE contents  ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ`,
+		// contents sent before this column existed: the nearest time we know
+		`UPDATE contents SET submitted_at = CASE WHEN status::text = 'pending_approval' THEN COALESCE(edited_at, created_at)
+		   ELSE COALESCE(approved_at, rejected_at, edited_at, created_at) END
+		 WHERE submitted_at IS NULL AND status::text <> 'draft'`,
 	} {
 		if _, err := pool.Exec(ctx, s); err != nil {
 			return err
@@ -90,13 +95,14 @@ func cleanReason(s string) (string, bool) {
 type person struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
+	Role  string `json:"role"` // admin, marketing or sales
 }
 
 type people map[string]person // key: lower-case email
 
 func loadPeople(ctx context.Context, pool *pgxpool.Pool) people {
 	out := people{}
-	rows, err := pool.Query(ctx, `SELECT lower(email), name, job_title FROM users`)
+	rows, err := pool.Query(ctx, `SELECT lower(email), name, job_title, role::text FROM users`)
 	if err != nil {
 		return out
 	}
@@ -104,7 +110,7 @@ func loadPeople(ctx context.Context, pool *pgxpool.Pool) people {
 	for rows.Next() {
 		var e string
 		var p person
-		if rows.Scan(&e, &p.Name, &p.Title) == nil {
+		if rows.Scan(&e, &p.Name, &p.Title, &p.Role) == nil {
 			out[e] = p
 		}
 	}
@@ -119,9 +125,10 @@ func (p people) of(email *string) person {
 }
 
 func (p people) fill(x *Content) {
-	x.CreatedByName, x.CreatedByTitle = p.of(x.CreatedBy).Name, p.of(x.CreatedBy).Title
-	x.ApprovedByName, x.ApprovedByTitle = p.of(x.ApprovedBy).Name, p.of(x.ApprovedBy).Title
-	x.RejectedByName, x.RejectedByTitle = p.of(x.RejectedBy).Name, p.of(x.RejectedBy).Title
+	c, a, r := p.of(x.CreatedBy), p.of(x.ApprovedBy), p.of(x.RejectedBy)
+	x.CreatedByName, x.CreatedByTitle, x.CreatedByRole = c.Name, c.Title, c.Role
+	x.ApprovedByName, x.ApprovedByTitle, x.ApprovedByRole = a.Name, a.Title, a.Role
+	x.RejectedByName, x.RejectedByTitle, x.RejectedByRole = r.Name, r.Title, r.Role
 }
 
 // ---- middleware ----
@@ -229,6 +236,7 @@ func registerContentRuleRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		err := pool.QueryRow(c.UserContext(),
 			`UPDATE contents SET body=$1, edited_by=$2, edited_at=now(),
 			   status      = CASE WHEN status IN ('approved','published') THEN 'pending_approval'::content_status ELSE status END,
+			   submitted_at = CASE WHEN status IN ('approved','published') THEN now() ELSE submitted_at END,
 			   approved_by = CASE WHEN status IN ('approved','published') THEN NULL ELSE approved_by END,
 			   approved_at = CASE WHEN status IN ('approved','published') THEN NULL ELSE approved_at END
 			 WHERE id=$3 AND body IS DISTINCT FROM $1 RETURNING status::text`, body, currentUser(c).Email, id).Scan(&status)
