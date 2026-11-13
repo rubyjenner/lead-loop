@@ -14,6 +14,7 @@ import (
 )
 
 func registerReportRoutes(app fiber.Router, pool *pgxpool.Pool) {
+	registerCampaignProgress(app, pool) // GET /campaign-progress: where each campaign is in the loop
 	app.Get("/reports/summary", func(c *fiber.Ctx) error {
 		ctx := c.Context()
 

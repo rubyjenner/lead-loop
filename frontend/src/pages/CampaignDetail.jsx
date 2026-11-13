@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { CAMPAIGN_STATUS, CHANNELS, SOURCE, Toast, baht, canEditCampaign, personLabel, timeAgo } from '../ui.jsx'
+import CampaignProgress from './CampaignProgress.jsx'
 import ContentCard from './ContentCard.jsx'
 import ImagePicker from './ImagePicker.jsx'
 import { FactsModal } from './Campaigns.jsx'
@@ -100,6 +101,8 @@ export default function CampaignDetail() {
           <span className={`tag tag-${camp.status}`}>{CAMPAIGN_STATUS[camp.status] || camp.status}</span>
         </div>
       </header>
+
+      <CampaignProgress id={id} version={`${contents.length}-${contents.map((x) => x.status).join()}-${camp.plan ? 1 : 0}`} />
 
       <dl className="facts">
         <div><dt>เป้าหมาย</dt><dd>{camp.goal || '-'}</dd></div>

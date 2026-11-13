@@ -39,6 +39,25 @@ let products = [
   { id: 1, name: 'มือถือมือสอง Smoke Phone', description: 'สภาพดี แบตเตอรี่ 90% ตรวจสภาพก่อนส่ง', price: 12900, brand_info: '', created_at: ago(60 * 24 * 6) },
   { id: 2, name: 'หูฟังไร้สาย Aria', description: 'แบตอึด 30 ชั่วโมง กันน้ำ IPX4', price: 2490, brand_info: '', created_at: ago(60 * 24 * 4) },
 ]
+// mirrors backend/campaign_progress.go for the mock data
+function mockProgress(c) {
+  const cs = contents.filter((x) => x.campaign_id === c.id)
+  const n = (st) => cs.filter((x) => x.status === st).length
+  const okc = n('approved') + n('published'), pend = n('pending_approval')
+  const ls = leads.filter((l) => l.campaign_id === c.id)
+  const handed = ls.filter((l) => ['qualified', 'handed_off', 'won', 'closed'].includes(l.status)).length
+  const closed = ls.filter((l) => ['won', 'closed'].includes(l.status)).length
+  const steps = [
+    ['created', 'สร้างแคมเปญ', true], ['planned', 'วางแผน', !!c.plan], ['drafted', 'ร่างคอนเทนต์', cs.length > 0],
+    ['submitted', 'ส่งอนุมัติ', pend + okc > 0], ['approved', 'อนุมัติแล้ว', okc > 0], ['leads', 'ลีดเข้ามา', ls.length > 0],
+    ['handed', 'ส่งต่อเซลส์', handed > 0], ['closed', 'ปิดการขาย', closed > 0],
+  ].map(([key, label, done]) => ({ key, label, done }))
+  if (cs.length) { steps[2].detail = `${cs.length} ชิ้น`; steps[4].detail = `${okc}/${cs.length}` }
+  if (ls.length) { steps[5].detail = `${ls.length} ราย`; steps[6].detail = `${handed} ราย`; steps[7].detail = `${closed} ราย` }
+  const current = steps.reduce((acc, s, i) => (s.done ? i : acc), 0)
+  const note = pend ? `รออนุมัติ ${pend} ชิ้น` : n('rejected') ? `ถูกปฏิเสธ ${n('rejected')} ชิ้น รอผู้สร้างแก้` : !c.plan ? 'ยังไม่มีแผน' : !cs.length ? 'ยังไม่มีคอนเทนต์' : ''
+  return { steps, current, note }
+}
 let campaigns = [
   { id: 3, product_id: 2, name: 'เปิดตัวหูฟังไร้สาย Aria', goal: 'ได้ลีด 80 คนภายในเดือนนี้', target_audience: 'คนทำงานรุ่นใหม่ ชอบฟังเพลงระหว่างเดินทาง', budget: 20000, status: 'planned', created_at: ago(60 * 24 * 3), plan: 'เป้าหมาย: ได้ลีด 80 คนภายในเดือนนี้ ด้วยงบ 20,000 บาท\n\n1) สัปดาห์ที่ 1: โพสต์เปิดตัวใน Facebook เน้นแบตอึด 30 ชั่วโมงและราคา 2,490 บาท\n2) สัปดาห์ที่ 2: ข้อความ LINE ตอบคำถามราคาและการใช้งาน ให้ลูกค้าที่สนใจกดยินยอมก่อนคุย\n3) สัปดาห์ที่ 3–4: ติดตามลีดที่ถามราคา ส่งต่อเซลส์เมื่อคะแนนถึงเกณฑ์\n\nวัดผล: จำนวนลีดที่ยินยอม, อัตราตอบกลับ, ลีดที่ถูกส่งต่อ', plan_generated_by: 'gemini' },
   { id: 2, product_id: 1, name: 'ลดล้างสต็อกมือถือมือสอง', goal: 'ปิดการขาย 10 เครื่อง', target_audience: 'นักศึกษา', budget: 8000, status: 'draft', created_at: ago(60 * 24 * 5), plan: '', plan_generated_by: '' },
@@ -114,6 +133,9 @@ export async function mockRequest(method, path, body, token) {
   }
   if (!token) return err(401, 'unauthorized')
   if (method === 'PUT' && path === '/auth/me') { Object.assign(globalThis.__me ||= {}, { name: body.name, job_title: body.job_title }); return ok({ ok: true }) }
+  if (method === 'GET' && path === '/campaign-progress') return ok(Object.fromEntries(campaigns.map((c) => [String(c.id), mockProgress(c)])))
+  const pm = path.match(/^\/campaign-progress\/(\d+)$/)
+  if (pm && method === 'GET') { const c = campaigns.find((x) => x.id === +pm[1]); return c ? ok(mockProgress(c)) : err(404, 'campaign not found') }
   if (path === '/auth/me') return ok({ id: '1', email: 'admin@example.com', role: 'admin', name: 'อาทิตยา เสาเวียง' })
   if (method === 'POST' && path === '/auth/password') return ok({ token: 'mock-token', expires_in: 28800 })
   if (method === 'GET' && path === '/users') return ok(users)
