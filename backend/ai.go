@@ -210,6 +210,13 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 			func() string { return strings.Join(templateContents(ci, in.Channel, in.Count), "\n---\n") }, img)
 		recordUsage(c.UserContext(), pool, email, id, "generate_contents", r)
 
+		// Asking again replaces the earlier AI drafts of this channel that nobody touched yet (still "draft", never edited),
+		// so choosing 1 after 3 leaves 1, not 4. Edited, submitted, approved and rejected contents are never removed.
+		replaced := int64(0)
+		if tag, err := pool.Exec(c.UserContext(),
+			`DELETE FROM contents WHERE campaign_id=$1 AND channel=$2 AND status='draft' AND generated_by <> 'human' AND edited_at IS NULL`, id, in.Channel); err == nil {
+			replaced = tag.RowsAffected()
+		}
 		out := []Content{}
 		ids := []int64{}
 		for _, part := range splitDrafts(r.Text, in.Count) {
@@ -224,8 +231,8 @@ func registerAIRoutes(app *fiber.App, pool *pgxpool.Pool, q JobQueue) {
 		}
 		queued := enqueue(c, r, Job{Kind: "contents", CampaignID: id, ContentIDs: ids, Channel: in.Channel, UserEmail: email})
 		auditUser(c, pool, "contents_generated", fmt.Sprintf("campaign:%d", id),
-			fmt.Sprintf("generated_by=%s count=%d", r.By, len(out)))
-		return c.Status(201).JSON(fiber.Map{"generated_by": r.By, "fallback_reason": r.Reason,
+			fmt.Sprintf("generated_by=%s count=%d replaced=%d", r.By, len(out), replaced))
+		return c.Status(201).JSON(fiber.Map{"generated_by": r.By, "fallback_reason": r.Reason, "replaced": replaced,
 			"retry_queued": queued, "contents": out, "image_used": imageUsed(r, imgFrom)})
 	})
 

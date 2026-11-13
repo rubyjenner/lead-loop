@@ -61,7 +61,7 @@ export default function CampaignDetail() {
     setBusy('contents'); setNotice(null)
     try {
       const r = await api('POST', `/campaigns/${id}/generate-contents`, { channel, count: Number(count), ...(aiImage ? { image: aiImage } : {}) })
-      setNotice(describe(r, 'ร่าง')); await load()
+      setNotice(describe(r, 'ร่าง')); if (r.replaced) setToast(`แทนที่ร่าง AI เดิมที่ยังไม่ได้แก้ ${r.replaced} ชิ้นด้วยร่างใหม่`); await load()
     } catch (e) { setNotice({ kind: 'error', text: e.message }) } finally { setBusy('') }
   }
   async function savePlan() {
@@ -170,6 +170,7 @@ export default function CampaignDetail() {
                 {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} ร่าง</option>)}
               </select>
               <button className="btn btn-primary" disabled={!!busy} onClick={makeContents}>{busy === 'contents' ? 'AI กำลังร่าง…' : 'ให้ AI ร่างคอนเทนต์'}</button>
+              <span className="muted small">ร่างใหม่จะแทนร่าง AI เดิมที่ยังไม่ได้แก้หรือส่งอนุมัติ</span>
             </div>
           )}
         </div>

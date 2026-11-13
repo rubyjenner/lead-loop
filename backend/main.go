@@ -192,7 +192,7 @@ func main() {
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text, c.created_at,
 			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), COALESCE(u.role::text,''),
-			 COALESCE((SELECT max(GREATEST(COALESCE(x.submitted_at,x.created_at),COALESCE(x.edited_at,x.created_at))) FROM contents x WHERE x.campaign_id=c.id),c.created_at)
+			 COALESCE((SELECT max(GREATEST(COALESCE(x.submitted_at,x.created_at),COALESCE(x.edited_at,x.created_at))) FROM contents x WHERE x.campaign_id=c.id),c.created_at) AS last_activity_at
 			 FROM campaigns c LEFT JOIN users u ON lower(u.email) = lower(c.created_by)
 			 ORDER BY last_activity_at DESC, c.id DESC`)
 		if err != nil {

@@ -207,9 +207,11 @@ export async function mockRequest(method, path, body, token) {
   m = path.match(/^\/campaigns\/(\d+)\/generate-contents$/)
   if (method === 'POST' && m) {
     const c = campaigns.find((x) => x.id === +m[1])
+    const replaced = contents.filter((x) => x.campaign_id === c.id && x.channel === body.channel && x.status === 'draft' && x.generated_by !== 'human' && !x.edited_at).length
+    contents = contents.filter((x) => !(x.campaign_id === c.id && x.channel === body.channel && x.status === 'draft' && x.generated_by !== 'human' && !x.edited_at))
     const out = Array.from({ length: body.count }, (_, i) => ({ id: 100 + contents.length + i, campaign_id: c.id, campaign_name: c.name, channel: body.channel, status: 'draft', generated_by: 'gemini', created_by: 'admin@example.com', approved_by: null, created_at: new Date().toISOString(), body: `ร่างที่ ${i + 1}: ${c.name} ${products.find((p) => p.id === c.product_id)?.description || ''}` }))
     contents.unshift(...out)
-    return ok({ generated_by: 'gemini', fallback_reason: '', retry_queued: false, contents: out }, 201)
+    return ok({ generated_by: 'gemini', fallback_reason: '', retry_queued: false, replaced, contents: out }, 201)
   }
   if (method === 'GET' && path === '/ai-usage/me') return ok({ used_today: 4, per_user_daily_limit: 30, token_cap_daily: 0 })
   if (method === 'GET' && path.startsWith('/contents')) {

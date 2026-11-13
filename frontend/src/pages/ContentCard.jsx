@@ -60,7 +60,7 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
         {showCampaign && <span className="card-camp">{c.campaign_name}</span>}
         <span className="tag">{CHANNELS[c.channel] || c.channel}</span>
         <span className={`tag tag-c-${c.status}`}>{CONTENT_STATUS[c.status] || c.status}</span>
-        <span className={`src src-${c.generated_by}`}>{SOURCE[c.generated_by] || c.generated_by}</span>
+        {c.generated_by !== 'human' && <span className={`src src-${c.generated_by}`}>{SOURCE[c.generated_by] || c.generated_by}</span>}
       </div>
 
       <div className="ad">
@@ -98,7 +98,7 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
       )}
 
       <div className="card-meta muted small">
-        สร้างโดย {personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)}
+        {c.generated_by === 'human' ? 'เขียนโดย' : 'AI ร่าง สร้างโดย'} {personLabel(c.created_by_name, c.created_by_title, c.created_by, c.created_by_role)}
         {c.submitted_at ? <> · <strong>ส่งล่าสุด {timeAgo(c.submitted_at)}</strong></> : <> · สร้างเมื่อ {timeAgo(c.created_at)}</>}
         {c.submission_version > 1 && <> · <span className="tag tag-c-approved">ส่งแก้ไขรอบ {c.submission_version}</span></>}
         {c.submitted_by && <> · ส่งโดย {c.submitted_by}</>}
@@ -106,6 +106,7 @@ export default function ContentCard({ c, image, campaignCreator, productChangedA
       </div>
 
       <div className="card-actions">
+        {reviewOnly && c.status === 'rejected' && c.campaign_id && <Link className="btn btn-quiet" to={`/campaigns/${c.campaign_id}`}>ดูแคมเปญและร่างของ AI</Link>}
         {!reviewOnly && <button className="btn btn-quiet" onClick={copyText}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความ'}</button>}
         {!reviewOnly && image && <button className="btn btn-quiet" onClick={downloadImage}>ดาวน์โหลดรูป</button>}
         {!reviewOnly && editable && !editing && <button className="btn btn-quiet" disabled={busy} onClick={() => { setText(c.body); setEditing(true) }}>แก้ข้อความ</button>}
