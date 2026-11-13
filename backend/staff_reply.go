@@ -167,6 +167,9 @@ func registerStaffReplyPublic(app fiber.Router, pool *pgxpool.Pool) {
 		panic("retention schema: " + err.Error())
 	}
 	go runRetentionScheduler(context.Background(), pool)
+	if err := initLostReason(context.Background(), pool); err != nil {
+		panic("lost reason schema: " + err.Error())
+	}
 	if err := initAssignment(context.Background(), pool); err != nil {
 		panic("assignment schema: " + err.Error())
 	}

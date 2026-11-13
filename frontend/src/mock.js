@@ -328,7 +328,7 @@ export async function mockRequest(method, path, body, token) {
     mm = path.match(/^\/leads\/(\d+)\/(message|status|consent)$/)
     if (mm && method === 'POST') {
       const l = leads.find((x) => x.id === +mm[1]); if (!l) return err(404, 'lead not found')
-      if (mm[2] === 'status') { l.status = body.status; return ok({ status: l.status }) }
+      if (mm[2] === 'status') { l.status = body.status; if (body.status === 'lost' && body.reason) l.lost_reason = body.reason; return ok({ status: l.status }) }
       if (mm[2] === 'consent') {
         if (body.kind === 'general' && body.action === 'withdrawn') { l.consent_general = false; l.consent_marketing = false; l.status = 'lost' } else if (body.kind === 'marketing') l.consent_marketing = body.action === 'granted'
         return ok({ ok: true })

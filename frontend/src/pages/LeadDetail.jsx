@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { LEAD_CHANNELS, LEAD_STATUS, Toast, baht, canManage, eventLabel } from '../ui.jsx'
+import { LEAD_CHANNELS, LEAD_STATUS, LOST_REASONS, Modal, Toast, baht, canManage, eventLabel } from '../ui.jsx'
 import { LevelTag, ScoreCell } from './Leads.jsx'
 
 export default function LeadDetail() {
@@ -18,6 +18,8 @@ export default function LeadDetail() {
   const [replyText, setReplyText] = useState('')
   const [owner, setOwner] = useState(null)
   const [team, setTeam] = useState([])
+  const [lostOpen, setLostOpen] = useState(false)
+  const [lostReason, setLostReason] = useState('')
 
   const load = useCallback(async () => {
     try { setLead(await api('GET', `/leads/${id}`)); setError('') } catch (e) { setError(e.message) }
@@ -57,6 +59,7 @@ export default function LeadDetail() {
     run(() => api('POST', `/leads/${id}/reply`, { body }), 'ส่งข้อความถึงลูกค้าแล้ว').then(() => { setReplyText(''); loadThread() })
   }
   const setStatus = (status) => run(() => api('POST', `/leads/${id}/status`, { status }), 'อัปเดตสถานะแล้ว')
+  const markLost = () => { setLostOpen(false); run(() => api('POST', `/leads/${id}/status`, { status: 'lost', ...(lostReason ? { reason: lostReason } : {}) }), 'อัปเดตสถานะแล้ว') }
   const consent = (kind, action) => run(() => api('POST', `/leads/${id}/consent`, { kind, action, text_version: 'mock-v1' }), 'บันทึกความยินยอมแล้ว')
   async function anonymize() {
     if (!confirm('ลบข้อมูลระบุตัวตนของลีดนี้ถาวร ย้อนกลับไม่ได้ ยืนยันหรือไม่?')) return
@@ -111,7 +114,7 @@ export default function LeadDetail() {
               {lead.status === 'qualified' && <button className="btn btn-primary" disabled={busy} onClick={() => setStatus('handed_off')}>รับลีดนี้ (ส่งต่อเซลส์)</button>}
               {(lead.status === 'qualified' || lead.status === 'handed_off') && <>
                 <button className="btn btn-quiet" disabled={busy} onClick={() => setStatus('closed')}>ปิดการขายได้</button>
-                <button className="btn btn-quiet" disabled={busy} onClick={() => setStatus('lost')}>ไม่สำเร็จ</button>
+                <button className="btn btn-quiet" disabled={busy} onClick={() => { setLostReason(''); setLostOpen(true) }}>ไม่สำเร็จ</button>
               </>}
               {lead.status !== 'qualified' && lead.status !== 'handed_off' && <span className="muted small">ส่งต่อได้เมื่อสถานะเป็น "พร้อมส่งต่อ"</span>}
             </div>
@@ -173,6 +176,19 @@ export default function LeadDetail() {
         </section>
       )}
       {user.role === 'admin' && <p style={{ marginTop: 18 }}><button className="btn btn-danger" onClick={anonymize}>ลบข้อมูลระบุตัวตนของลีดนี้</button></p>}
+      {lostOpen && (
+        <Modal title="ไม่สำเร็จเพราะอะไร" onClose={() => setLostOpen(false)}>
+          <p className="muted small">เลือกสาเหตุหลักเพื่อให้แผนแคมเปญรอบถัดไปปรับตามได้ (ไม่บังคับ และไม่ต้องพิมพ์ข้อมูลลูกค้า)</p>
+          <select className="search" value={lostReason} onChange={(e) => setLostReason(e.target.value)} aria-label="สาเหตุ">
+            <option value="">ไม่ระบุ</option>
+            {LOST_REASONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          </select>
+          <div className="actions" style={{ marginTop: 16 }}>
+            <button className="btn btn-primary" disabled={busy} onClick={markLost}>บันทึกว่าไม่สำเร็จ</button>
+            <button className="btn btn-quiet" onClick={() => setLostOpen(false)}>ยกเลิก</button>
+          </div>
+        </Modal>
+      )}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>
   )

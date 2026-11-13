@@ -50,6 +50,9 @@ func pastResultsFor(ctx context.Context, pool *pgxpool.Pool, excludeCampaign int
 	if !r.enough() {
 		return r, nil
 	}
+	if lr, err := loadLostReasons(ctx, pool, excludeCampaign, product); err == nil {
+		r.LostReasons = lr
+	}
 	rows, err := pool.Query(ctx, `SELECT l.channel, `+outcomeCols+where+` GROUP BY l.channel ORDER BY count(*) DESC`, excludeCampaign, product)
 	if err != nil {
 		return r, err

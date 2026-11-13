@@ -29,10 +29,11 @@ type pastChannel struct {
 }
 
 type pastResults struct {
-	Scope     string // "same_product" | "all_products"
-	Total     outcomeCount
-	Campaigns []pastCampaign // most recent first, already limited
-	Channels  []pastChannel
+	Scope       string // "same_product" | "all_products"
+	Total       outcomeCount
+	Campaigns   []pastCampaign // most recent first, already limited
+	Channels    []pastChannel
+	LostReasons []reasonCount // why lost leads were lost (fixed codes, counts only)
 }
 
 func pct(part, whole int) string {
@@ -81,6 +82,9 @@ func (r pastResults) render() string {
 	for _, c := range r.Campaigns {
 		fmt.Fprintf(&sb, "- แคมเปญ \"%s\": %s\n", c.Name, c.line())
 	}
+	if l := lostReasonLine(r.LostReasons); l != "" {
+		fmt.Fprintf(&sb, "- สาเหตุที่ลีดหลุด: %s\n", l)
+	}
 	return sb.String()
 }
 
@@ -110,6 +114,12 @@ func (r pastResults) planSection() string {
 	s := fmt.Sprintf("8. ผลรอบก่อน: %s", r.Total.line())
 	if b := r.best(); b != "" {
 		s += fmt.Sprintf(" ช่องทางที่ได้ผลดีที่สุดคือ %s ควรให้น้ำหนักช่องทางนี้ก่อน", b)
+	}
+	if code := topLostReason(r.LostReasons); code != "" {
+		s += fmt.Sprintf(" สาเหตุที่ลีดหลุดบ่อยที่สุดคือ \"%s\"", lostReasons[code])
+		if adv := lostAdvice[code]; adv != "" {
+			s += " " + adv
+		}
 	}
 	return s
 }

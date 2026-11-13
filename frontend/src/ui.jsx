@@ -189,3 +189,6 @@ export function ThemeToggle({ compact }) {
     </button>
   )
 }
+
+// Why a lead was lost (codes match backend/lost_reason.go)
+export const LOST_REASONS = [['price', 'ราคาสูงเกินไป'], ['no_reply', 'ลูกค้าไม่ตอบกลับ'], ['competitor', 'เลือกเจ้าอื่น'], ['no_need', 'ยังไม่ต้องการ/ไม่จำเป็น'], ['timing', 'จังหวะเวลาไม่เหมาะ'], ['other', 'อื่น ๆ']]
