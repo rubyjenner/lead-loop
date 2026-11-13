@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
-import { CAMPAIGN_STATUS, CHANNELS, SOURCE, Toast, baht, canEditCampaign, personLabel, timeAgo } from '../ui.jsx'
+import { CAMPAIGN_STATUS, CHANNELS, SOURCE, Toast, baht, canEditCampaign, impactNote, personLabel, timeAgo } from '../ui.jsx'
 import CampaignProgress from './CampaignProgress.jsx'
 import ContentCard from './ContentCard.jsx'
 import ImagePicker from './ImagePicker.jsx'
@@ -94,7 +94,7 @@ export default function CampaignDetail() {
               
             </span>
           </div>
-          <p className="muted small">สร้างโดย {personLabel(camp.created_by_name, camp.created_by_title, camp.created_by)} · {timeAgo(camp.created_at)}</p>
+          <p className="muted small">สร้างโดย {personLabel(camp.created_by_name, camp.created_by_title, camp.created_by, camp.created_by_role)} · {timeAgo(camp.created_at)}</p>
         </div>
         <div className="actions">
           {canEdit && camp.product_id && <button className="btn btn-quiet" onClick={openProduct}>แก้ไขสินค้า</button>}
@@ -183,7 +183,7 @@ export default function CampaignDetail() {
           ))}
         </ul>
       </section>
-      {editProduct && <FactsModal product={editProduct} onClose={() => setEditProduct(null)} onSaved={async () => { setEditProduct(null); setToast('บันทึกข้อมูลสินค้าแล้ว'); await load() }} />}
+      {editProduct && <FactsModal product={editProduct} onClose={() => setEditProduct(null)} onSaved={async (r) => { setEditProduct(null); const n = impactNote(r?.changed, r?.impact); if (n) setNotice({ kind: 'warn', text: n }); else setToast('บันทึกข้อมูลสินค้าแล้ว (ไม่มีอะไรเปลี่ยน)'); await load() }} />}
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>
   )

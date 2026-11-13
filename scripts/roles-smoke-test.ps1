@@ -68,6 +68,7 @@ Check 'A creates a campaign (201)' ($camp.Status -eq 201)
 $cid = $camp.Json.id
 $cd = (Call 'GET' "/campaigns/$cid" $b.Token $null).Json
 Check 'campaign shows creator full name and job title' ($cd.created_by_name -like 'Somchai*' -and $cd.created_by_title -eq 'Marketing Manager')
+Check 'campaign shows the creator role' ($cd.created_by_role -eq 'marketing')
 $ct = Call 'POST' "/campaigns/$cid/contents" $a.Token @{ channel = 'line'; body = 'roles smoke text' }
 Check 'A (creator) adds a content draft' ($ct.Status -eq 201)
 $tid = $ct.Json.id
@@ -100,6 +101,43 @@ $row = @((Call 'GET' "/campaigns/$cid/contents" $a.Token $null).Json | Where-Obj
 Check 'the approval is cleared' ($row.status -eq 'pending_approval' -and -not $row.approved_by)
 $same = Call 'PUT' "/contents/$tid" $a.Token @{ body = 'roles smoke text v4 after approval' }
 Check 'saving the same text changes nothing' ($same.Status -eq 200 -and $same.Json.changed -eq $false)
+
+Write-Host "`n== Approvals: submit time, newest submitted first, role ==" -ForegroundColor Cyan
+$ct2 = Call 'POST' "/campaigns/$cid/contents" $a.Token @{ channel = 'line'; body = 'roles smoke second text' }
+$tid2 = $ct2.Json.id
+Check 'a second draft has no submit time yet' ($ct2.Status -eq 201 -and -not $ct2.Json.submitted_at)
+Start-Sleep -Milliseconds 1100
+Check 'A submits the second draft' ((Call 'POST' "/contents/$tid2/submit" $a.Token $null).Status -eq 200)
+$pend = @((Call 'GET' '/contents?status=pending_approval' $b.Token $null).Json)
+$ids = @($pend | ForEach-Object { $_.id })
+$p2 = [array]::IndexOf($ids, $tid2); $p1 = [array]::IndexOf($ids, $tid)
+Check 'both are pending and the later submission is listed first' ($p2 -ge 0 -and $p1 -ge 0 -and $p2 -lt $p1)
+$r2 = $pend[$p2]
+Check 'the row has submitted_at and the creator role' ($r2.submitted_at -and $r2.created_by_role -eq 'marketing')
+
+Write-Host "`n== Product change: what it touches ==" -ForegroundColor Cyan
+$prod = Call 'POST' '/products' $a.Token @{ name = "roles product $sfx"; description = 'first text'; price = 100 }
+Check 'A creates a product (201)' ($prod.Status -eq 201)
+$pid2 = $prod.Json.id
+$camp2 = Call 'POST' '/campaigns' $a.Token @{ name = "roles-p-$sfx"; goal = 'test'; budget = 100; product_id = $pid2 }
+$cid2 = $camp2.Json.id
+$k1 = (Call 'POST' "/campaigns/$cid2/contents" $a.Token @{ channel = 'line'; body = 'approved text' }).Json.id
+$k2 = (Call 'POST' "/campaigns/$cid2/contents" $a.Token @{ channel = 'line'; body = 'pending text' }).Json.id
+[void](Call 'POST' "/contents/$k1/submit" $a.Token $null)
+Check 'B approves the first content' ((Call 'POST' "/contents/$k1/approve" $b.Token $null).Status -eq 200)
+[void](Call 'POST' "/contents/$k2/submit" $a.Token $null)
+$same = Call 'PUT' "/products/$pid2" $a.Token @{ name = "roles product $sfx"; description = 'first text'; price = 100 }
+Check 'saving the same product data reports changed=false' ($same.Status -eq 200 -and $same.Json.changed -eq $false)
+$chg = Call 'PUT' "/products/$pid2" $a.Token @{ name = "roles product $sfx"; description = 'first text'; price = 120 }
+Check 'a price change reports changed=true' ($chg.Status -eq 200 -and $chg.Json.changed -eq $true)
+Check 'impact counts the campaign, the approved and the pending content' ($chg.Json.impact.campaigns -eq 1 -and $chg.Json.impact.approved -eq 1 -and $chg.Json.impact.pending -eq 1)
+$f1 = Call 'PUT' "/product-facts/$pid2" $a.Token @{ variants = 'S M L'; product_type = ''; after_sales = ''; payment_methods = ''; installment_info = '' }
+Check 'changing the facts reports changed=true with the same impact' ($f1.Status -eq 200 -and $f1.Json.changed -eq $true -and $f1.Json.impact.approved -eq 1)
+$f2 = Call 'PUT' "/product-facts/$pid2" $a.Token @{ variants = 'S M L'; product_type = ''; after_sales = ''; payment_methods = ''; installment_info = '' }
+Check 'saving the same facts reports changed=false' ($f2.Status -eq 200 -and $f2.Json.changed -eq $false)
+$cdp = (Call 'GET' "/campaigns/$cid2" $b.Token $null).Json
+Check 'the campaign carries product_changed_at after the approval' ($cdp.product_changed_at)
+Check 'unknown product -> 404' ((Call 'PUT' '/products/999999999' $admin @{ name = 'x'; description = ''; price = 1 }).Status -eq 404)
 
 Write-Host "`n== Admin edits any campaign, with an audit entry ==" -ForegroundColor Cyan
 Check 'admin edits A campaign content (200)' ((Call 'PUT' "/contents/$tid" $admin @{ body = 'edited by admin' }).Status -eq 200)

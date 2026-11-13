@@ -27,6 +27,7 @@ type Campaign struct {
 	CreatedBy      *string   `json:"created_by"`
 	CreatedByName  string    `json:"created_by_name"`
 	CreatedByTitle string    `json:"created_by_title"`
+	CreatedByRole  string    `json:"created_by_role"`
 }
 
 type Product struct {
@@ -56,24 +57,28 @@ type Content struct {
 	RejectedBy   *string    `json:"rejected_by"`
 	RejectedAt   *time.Time `json:"rejected_at"`
 	EditedAt     *time.Time `json:"edited_at"`
+	SubmittedAt  *time.Time `json:"submitted_at"` // when it was last sent for approval (newest first on the approvals page)
 
 	// full name and job title of the people above (filled from the users table; empty if unknown)
 	CreatedByName   string `json:"created_by_name,omitempty"`
 	CreatedByTitle  string `json:"created_by_title,omitempty"`
+	CreatedByRole   string `json:"created_by_role,omitempty"`
 	ApprovedByName  string `json:"approved_by_name,omitempty"`
 	ApprovedByTitle string `json:"approved_by_title,omitempty"`
+	ApprovedByRole  string `json:"approved_by_role,omitempty"`
 	RejectedByName  string `json:"rejected_by_name,omitempty"`
 	RejectedByTitle string `json:"rejected_by_title,omitempty"`
+	RejectedByRole  string `json:"rejected_by_role,omitempty"`
 }
 
 const contentCols = `id, campaign_id, channel, body, status::text, approved_by, approved_at, publish_at, created_at, generated_by, created_by,
-	reject_reason, rejected_by, rejected_at, edited_at`
+	reject_reason, rejected_by, rejected_at, edited_at, submitted_at`
 
 func scanContent(row interface{ Scan(...any) error }) (Content, error) {
 	var x Content
 	err := row.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status,
 		&x.ApprovedBy, &x.ApprovedAt, &x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
-		&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt)
+		&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.SubmittedAt)
 	return x, err
 }
 
@@ -175,7 +180,7 @@ func main() {
 	app.Get("/campaigns", func(c *fiber.Ctx) error {
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text, c.created_at,
-			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,'')
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), COALESCE(u.role::text,'')
 			 FROM campaigns c LEFT JOIN users u ON lower(u.email) = lower(c.created_by)
 			 ORDER BY c.id DESC`)
 		if err != nil {
@@ -186,7 +191,7 @@ func main() {
 		for rows.Next() {
 			var x Campaign
 			if err := rows.Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status, &x.CreatedAt,
-				&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle); err != nil {
+				&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.CreatedByRole); err != nil {
 				return serverError(c, err)
 			}
 			out = append(out, x)
@@ -211,12 +216,12 @@ func main() {
 		err = pool.QueryRow(c.Context(),
 			`SELECT c.id, c.product_id, c.name, c.goal, c.target_audience, c.budget::float8, c.status::text,
 			        c.created_at, c.plan, c.plan_generated_by, p.name, p.image_url,
-			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), p.facts_changed_at
+			        c.created_by, COALESCE(u.name,''), COALESCE(u.job_title,''), COALESCE(u.role::text,''), p.facts_changed_at
 			 FROM campaigns c LEFT JOIN products p ON p.id = c.product_id
 			 LEFT JOIN users u ON lower(u.email) = lower(c.created_by) WHERE c.id=$1`, id,
 		).Scan(&x.ID, &x.ProductID, &x.Name, &x.Goal, &x.TargetAudience, &x.Budget, &x.Status,
 			&x.CreatedAt, &x.Plan, &x.PlanGeneratedBy, &x.ProductName, &x.ProductImageURL,
-			&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.ProductChangedAt)
+			&x.CreatedBy, &x.CreatedByName, &x.CreatedByTitle, &x.CreatedByRole, &x.ProductChangedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return c.Status(404).JSON(fiber.Map{"error": "campaign not found"})
 		}
@@ -332,11 +337,11 @@ func main() {
 		rows, err := pool.Query(c.Context(),
 			`SELECT c.id, c.campaign_id, c.channel, c.body, c.status::text, c.approved_by, c.approved_at,
 			        c.publish_at, c.created_at, c.generated_by, c.created_by,
-			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, k.name,
+			        c.reject_reason, c.rejected_by, c.rejected_at, c.edited_at, c.submitted_at, k.name,
 			        k.created_by, COALESCE(p.image_url, ''), p.facts_changed_at
 			 FROM contents c JOIN campaigns k ON k.id = c.campaign_id LEFT JOIN products p ON p.id = k.product_id
 			 WHERE ($1 = '' OR c.status::text = $1)
-			 ORDER BY c.id DESC LIMIT 200`, status)
+			 ORDER BY COALESCE(c.submitted_at, c.created_at) DESC, c.id DESC LIMIT 200`, status)
 		if err != nil {
 			return serverError(c, err)
 		}
@@ -354,7 +359,7 @@ func main() {
 			var x row
 			if err := rows.Scan(&x.ID, &x.CampaignID, &x.Channel, &x.Body, &x.Status, &x.ApprovedBy, &x.ApprovedAt,
 				&x.PublishAt, &x.CreatedAt, &x.GeneratedBy, &x.CreatedBy,
-				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.CampaignName,
+				&x.RejectReason, &x.RejectedBy, &x.RejectedAt, &x.EditedAt, &x.SubmittedAt, &x.CampaignName,
 				&x.CampaignCreatedBy, &x.ProductImageURL, &x.ProductChangedAt); err != nil {
 				return serverError(c, err)
 			}
@@ -367,7 +372,7 @@ func main() {
 	// draft or rejected -> pending_approval
 	app.Post("/contents/:id/submit", writers, contentEditor(pool), func(c *fiber.Ctx) error {
 		return setContentStatus(c, pool,
-			`UPDATE contents SET status='pending_approval'
+			`UPDATE contents SET status='pending_approval', submitted_at=now()
 			 WHERE id=$1 AND status IN ('draft','rejected')`,
 			"content not found or not in draft/rejected status", "pending_approval", "content_submitted")
 	})

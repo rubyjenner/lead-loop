@@ -140,10 +140,24 @@ export const eventLabel = (k) => EVENTS[k] || k
 export const canManage = (user) => user.role === 'admin' || user.role === 'marketing'
 
 // "Full name · position", falling back to the e-mail when the person has no name yet
-export function personLabel(name, title, email) {
+// "สมชาย ใจดี · Marketing Manager (การตลาด)"; falls back to the email when the user has no name set
+export function personLabel(name, title, email, role) {
   const n = (name || '').trim()
-  if (!n) return email || 'ไม่ระบุ'
-  return title ? `${n} · ${title}` : n
+  const r = ROLES[role]?.label
+  const who = !n ? (email || 'ไม่ระบุ') : title ? `${n} · ${title}` : n
+  return r ? `${who} (${r})` : who
+}
+
+// What to tell the editor after a product was saved: how many campaigns and contents the change touches.
+export function impactNote(changed, impact) {
+  if (!changed) return null
+  const i = impact || {}
+  const parts = []
+  if (i.approved) parts.push(`คอนเทนต์ที่อนุมัติแล้ว ${i.approved} ชิ้น (ข้อความยังเป็นของเดิม ควรตรวจและแก้)`)
+  if (i.pending) parts.push(`คอนเทนต์ที่รออนุมัติ ${i.pending} ชิ้น (ให้ผู้อนุมัติตรวจราคาและรายละเอียดก่อนอนุมัติ)`)
+  if (i.drafts) parts.push(`ร่าง ${i.drafts} ชิ้น`)
+  const head = `บันทึกข้อมูลสินค้าแล้ว บอตตอบตามข้อมูลใหม่ทันที สินค้านี้ใช้อยู่ใน ${i.campaigns || 0} แคมเปญ`
+  return parts.length ? `${head} · กระทบ: ${parts.join(', ')}` : head
 }
 
 // Same rule as the server (backend/roles.go): the creator or an admin edits; old campaigns without a creator are open to marketing
