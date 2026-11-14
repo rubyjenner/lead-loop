@@ -363,6 +363,9 @@ a.theme-icon{text-decoration:none}
 .prog-steps li.done .prog-dot{background:var(--loop);border-color:var(--loop);color:#fff}
 .prog-steps li.current .prog-dot{box-shadow:0 0 0 4px var(--loop-soft)}
 .prog-steps li.current .prog-label{color:var(--text);font-weight:600}
+.prog-steps li.warn .prog-dot{background:#b42318;border-color:#b42318;color:#fff}
+.prog-steps li.warn .prog-detail{color:#b42318;font-weight:600}
+.prog-bar i.warn{background:#b42318}
 .prog-label{font-size:13px}.prog-detail{font-size:12px;color:var(--muted)}
 .prog-note-line{margin:10px 0 0;font-size:14px;color:var(--loop-d)}
 .prog-cell{display:flex;flex-direction:column;gap:3px}

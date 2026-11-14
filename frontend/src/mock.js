@@ -53,10 +53,10 @@ function mockProgress(c) {
   const closed = ls.filter((l) => ['won', 'closed'].includes(l.status)).length
   const steps = [
     ['created', 'สร้างแคมเปญ', true], ['planned', 'วางแผน', !!c.plan], ['drafted', 'ร่างคอนเทนต์', cs.length > 0],
-    ['submitted', 'ส่งอนุมัติ', pend + okc > 0], ['approved', 'อนุมัติแล้ว', okc > 0], ['leads', 'ลีดเข้ามา', ls.length > 0],
+    ['submitted', 'ส่งอนุมัติ', pend + okc + n('rejected') > 0], ['approved', 'อนุมัติแล้ว', okc > 0 && !pend && !n('rejected')], ['leads', 'ลีดเข้ามา', ls.length > 0],
     ['handed', 'ส่งต่อเซลส์', handed > 0], ['closed', 'ปิดการขาย', closed > 0],
   ].map(([key, label, done]) => ({ key, label, done }))
-  if (cs.length) { steps[2].detail = `${cs.length} ชิ้น`; steps[4].detail = `${okc}/${cs.length}` }
+  if (cs.length) { steps[2].detail = `${cs.length} ชิ้น`; steps[4].detail = `${okc}/${cs.length}`; if (n('rejected')) { steps[4].warn = true; steps[4].detail += ` · ปฏิเสธ ${n('rejected')}` } }
   if (ls.length) { steps[5].detail = `${ls.length} ราย`; steps[6].detail = `${handed} ราย`; steps[7].detail = `${closed} ราย` }
   const current = steps.reduce((acc, s, i) => (s.done ? i : acc), 0)
   const note = pend ? `รออนุมัติ ${pend} ชิ้น` : n('rejected') ? `ถูกปฏิเสธ ${n('rejected')} ชิ้น รอผู้สร้างแก้` : !c.plan ? 'ยังไม่มีแผน' : !cs.length ? 'ยังไม่มีคอนเทนต์' : ''

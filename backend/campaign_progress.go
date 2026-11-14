@@ -27,6 +27,7 @@ type progressStep struct {
 	Label  string `json:"label"`
 	Done   bool   `json:"done"`
 	Detail string `json:"detail,omitempty"`
+	Warn   bool   `json:"warn,omitempty"` // something here needs fixing (e.g. content was rejected)
 }
 
 func (p progressCounts) contents() int {
@@ -41,8 +42,9 @@ func campaignSteps(p progressCounts) []progressStep {
 		{Key: "created", Label: "สร้างแคมเปญ", Done: true},
 		{Key: "planned", Label: "วางแผน", Done: p.HasPlan},
 		{Key: "drafted", Label: "ร่างคอนเทนต์", Done: total > 0},
-		{Key: "submitted", Label: "ส่งอนุมัติ", Done: p.Pending+okc > 0},
-		{Key: "approved", Label: "อนุมัติแล้ว", Done: okc > 0},
+		{Key: "submitted", Label: "ส่งอนุมัติ", Done: p.Pending+okc+p.Rejected > 0},
+		// "approved" means everything that was submitted is approved: not while something is waiting or was rejected
+		{Key: "approved", Label: "อนุมัติแล้ว", Done: okc > 0 && p.Pending == 0 && p.Rejected == 0},
 		{Key: "leads", Label: "ลีดเข้ามา", Done: p.Leads > 0},
 		{Key: "handed", Label: "ส่งต่อเซลส์", Done: p.Handed > 0},
 		{Key: "closed", Label: "ปิดการขาย", Done: p.Closed > 0},
@@ -50,6 +52,10 @@ func campaignSteps(p progressCounts) []progressStep {
 	if total > 0 {
 		steps[2].Detail = fmt.Sprintf("%d ชิ้น", total)
 		steps[4].Detail = fmt.Sprintf("%d/%d", okc, total)
+		if p.Rejected > 0 {
+			steps[4].Warn = true
+			steps[4].Detail += fmt.Sprintf(" · ปฏิเสธ %d", p.Rejected)
+		}
 	}
 	if p.Leads > 0 {
 		steps[5].Detail = fmt.Sprintf("%d ราย", p.Leads)

@@ -16,7 +16,7 @@ export function ProgressCell({ data }) {
   return (
     <span className="prog-cell">
       <span className="prog-bar" aria-hidden="true">
-        {data.steps.map((s) => <i key={s.key} className={s.done ? 'on' : ''} />)}
+        {data.steps.map((s) => <i key={s.key} className={s.done ? 'on' : s.warn ? 'warn' : ''} />)}
       </span>
       <span className="small">{cur.label}</span>
       {data.note && <span className="prog-note">{data.note}</span>}
@@ -32,8 +32,8 @@ export default function CampaignProgress({ id, version }) {
     <section className="block prog" aria-label="ความคืบหน้าแคมเปญ">
       <ol className="prog-steps">
         {data.steps.map((s, i) => (
-          <li key={s.key} className={`${s.done ? 'done' : ''} ${i === data.current ? 'current' : ''}`} aria-current={i === data.current ? 'step' : undefined}>
-            <span className="prog-dot">{s.done ? '✓' : i + 1}</span>
+          <li key={s.key} className={`${s.done ? 'done' : ''} ${s.warn ? 'warn' : ''} ${i === data.current ? 'current' : ''}`} aria-current={i === data.current ? 'step' : undefined}>
+            <span className="prog-dot">{s.warn ? '!' : s.done ? '✓' : i + 1}</span>
             <span className="prog-label">{s.label}</span>
             {s.detail && <span className="prog-detail">{s.detail}</span>}
           </li>
