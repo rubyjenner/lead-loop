@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, streamNotifications } from '../api.js'
 import { useLang } from '../i18n.jsx'
@@ -14,15 +14,65 @@ function ago(value, lang) {
   return lang === 'en' ? `${days}d ago` : `${days} วันที่แล้ว`
 }
 
+// A short two-tone chime made with the Web Audio API (no sound file). Browsers only allow sound after the person has
+// clicked or typed on the page once, so the audio context is created on the first interaction.
+const SOUND_KEY = 'leadloop-bell-sound'
+let audioCtx
+function unlockAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return
+    audioCtx = audioCtx || new AC()
+    if (audioCtx.state === 'suspended') audioCtx.resume()
+  } catch { /* no sound available */ }
+}
+function chime() {
+  try {
+    unlockAudio()
+    if (!audioCtx || audioCtx.state !== 'running') return
+    const t0 = audioCtx.currentTime
+    ;[[880, 0], [1320, 0.16]].forEach(([freq, at]) => {
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.0001, t0 + at)
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + at + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32)
+      osc.connect(gain).connect(audioCtx.destination)
+      osc.start(t0 + at)
+      osc.stop(t0 + at + 0.34)
+    })
+  } catch { /* ignore */ }
+}
+function soundOn() { try { return localStorage.getItem(SOUND_KEY) !== 'off' } catch { return true } }
+
 export default function NotificationBell() {
   const { lang } = useLang()
   const [open, setOpen] = useState(false)
   const [data, setData] = useState({ unread_count: 0, items: [] })
   const [busy, setBusy] = useState(false)
+  const [sound, setSound] = useState(soundOn)
+  const lastUnread = useRef(null) // null until the first load, so opening the page never plays a sound
+  const soundRef = useRef(sound)
+  soundRef.current = sound
   async function load() {
-    try { setData(await api('GET', '/notifications?limit=30')) } catch { /* bell stays quiet if API is unavailable */ }
+    try {
+      const d = await api('GET', '/notifications?limit=30')
+      if (lastUnread.current !== null && d.unread_count > lastUnread.current && soundRef.current) chime()
+      lastUnread.current = d.unread_count
+      setData(d)
+    } catch { /* bell stays quiet if API is unavailable */ }
+  }
+  function toggleSound() {
+    const next = !sound
+    setSound(next)
+    try { localStorage.setItem(SOUND_KEY, next ? 'on' : 'off') } catch { /* ignore */ }
+    if (next) chime() // lets the person hear what it sounds like
   }
   useEffect(() => {
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('keydown', unlockAudio, { once: true })
     load()
     const controller = new AbortController()
     let retryTimer
@@ -54,6 +104,7 @@ export default function NotificationBell() {
         <section className="notification-panel" aria-label={lang === 'en' ? 'Notification history' : 'ประวัติการแจ้งเตือน'}>
           <header className="notification-head">
             <strong>{lang === 'en' ? 'Notifications' : 'การแจ้งเตือน'}</strong>
+            <button className="btn btn-quiet small" aria-pressed={sound} title={lang === 'en' ? 'Sound for new notifications' : 'เสียงเมื่อมีแจ้งเตือนใหม่'} onClick={toggleSound}>{sound ? '🔊' : '🔇'} {lang === 'en' ? (sound ? 'Sound on' : 'Sound off') : (sound ? 'เสียงเปิด' : 'เสียงปิด')}</button>
             <button className="btn btn-quiet small" disabled={!data.unread_count || busy} onClick={markAll}>{lang === 'en' ? 'Mark all read' : 'อ่านทั้งหมด'}</button>
           </header>
           {data.items.length === 0 ? <p className="notification-empty">{lang === 'en' ? 'No notifications yet' : 'ยังไม่มีการแจ้งเตือน'}</p> :
