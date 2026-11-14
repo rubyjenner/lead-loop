@@ -97,7 +97,9 @@ func TestRedisStoreRoundTripAndFallback(t *testing.T) {
 
 	// Redis goes away: the limiter must keep working on the in-memory copy and never return an error
 	stop()
-	_, _ = c.do(nilCtx(), "PING") // drop the dead connection
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), time.Second)
+	_, _ = c.do(pingCtx, "PING") // drop the dead connection
+	cancelPing()
 	if err := s.Set("x", []byte("1"), time.Minute); err != nil {
 		t.Fatalf("set during outage must not fail: %v", err)
 	}
@@ -116,11 +118,6 @@ func TestMemStoreExpiry(t *testing.T) {
 	if v, _ := m.Get("a"); v != nil {
 		t.Fatal("should have expired")
 	}
-}
-
-func nilCtx() context.Context {
-	c, _ := context.WithTimeout(context.Background(), time.Second)
-	return c
 }
 
 var ioReadFull = io.ReadFull
