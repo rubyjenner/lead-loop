@@ -148,9 +148,11 @@ func main() {
 	registerPublicChatRoutes(app, pool) // public, off unless PUBLIC_CHAT_ENABLED=1
 	registerLineRoutes(app, pool)       // public webhook, off unless LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN are set
 	registerShopRoutes(app, pool)
-	registerStaffReplyPublic(app, pool) // public poll for staff replies, off unless PUBLIC_CHAT_ENABLED=1
+	registerStaffReplyPublic(app, pool)    // public poll for staff replies, off unless PUBLIC_CHAT_ENABLED=1
+	registerPaymentPublicRoutes(app, pool) // เพิ่ม: public pay page, off unless PAYMENTS_ENABLED=1
 	registerAuthRoutes(app, pool)
 	registerLeadRoutes(app, pool)
+	registerPaymentRoutes(app, pool) // เพิ่ม
 	registerStaffReplyRoutes(app, pool)
 	registerDailyRoutes(app, pool)
 	registerLineFollowupRoutes(app, pool)
