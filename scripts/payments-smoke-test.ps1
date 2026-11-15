@@ -73,6 +73,7 @@ Check 'A: lead is qualified' ((Call 'GET' "/leads/$a").Body.status -eq 'qualifie
 $p = Call 'POST' "/leads/$a/payments"
 if ($p.Status -eq 409 -and "$($p.Body.error)" -like '*not enabled*') {
   Write-Host 'Payments are off. Set PAYMENTS_ENABLED=1 and PROMPTPAY_ID in .env, then docker compose up -d --force-recreate api' -ForegroundColor Yellow
+  $null = Call 'DELETE' "/leads/$a"
   exit 1
 }
 Check 'A: request created (201)' ($p.Status -eq 201)

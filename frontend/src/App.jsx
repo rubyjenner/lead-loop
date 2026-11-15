@@ -23,6 +23,7 @@ import Followups from './pages/Followups.jsx'
 import ChatTest from './pages/ChatTest.jsx'
 import Reports from './pages/Reports.jsx'
 import PublicChat from './pages/PublicChat.jsx'
+import Pay from './pages/Pay.jsx'
 import Integrations from './pages/Integrations.jsx'
 
 function Shell() {
@@ -96,7 +97,7 @@ export default function App() {
   const { ready } = useAuth()
   if (!ready) return <div className="boot" aria-busy="true" />
   return <Routes>
-    <Route path="/login" element={<Login />} /><Route path="/set-password" element={<SetPassword />} /><Route path="/chat" element={<PublicChat />} /><Route path="/change-password" element={<ChangePassword />} />
+    <Route path="/login" element={<Login />} /><Route path="/set-password" element={<SetPassword />} /><Route path="/chat" element={<PublicChat />} /><Route path="/pay/:token" element={<Pay />} /><Route path="/change-password" element={<ChangePassword />} />
     <Route element={<Shell />}>
       <Route path="/" element={<Home />} /><Route path="/profile" element={<Profile />} /><Route path="/users" element={<Users />} /><Route path="/audit" element={<Audit />} /><Route path="/retention" element={<Retention />} />
       <Route path="/integrations" element={<Integrations />} /><Route path="/campaigns" element={<Campaigns />} /><Route path="/campaigns/:id" element={<CampaignDetail />} /><Route path="/approvals" element={<Approvals />} /><Route path="/overview" element={<Overview />} />

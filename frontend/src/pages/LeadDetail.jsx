@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { LEAD_CHANNELS, LEAD_STATUS, LOST_REASONS, Modal, Toast, baht, canManage, eventLabel } from '../ui.jsx'
 import { LevelTag, ScoreCell } from './Leads.jsx'
+import PaymentPanel from './PaymentPanel.jsx'
 
 export default function LeadDetail() {
   const { id } = useParams()
@@ -147,6 +148,14 @@ export default function LeadDetail() {
           )}
         </section>
       </div>
+            <PaymentPanel
+        leadId={lead.id}
+        leadStatus={lead.status}
+        canCreate={canSales}
+        canConfirm={user.role === 'marketing' || user.role === 'admin'}
+        myEmail={user.email}
+        onChanged={load}
+      />
       {(lead.channel === 'web' || lead.channel === 'line') && (
         <section className="panel" style={{ marginTop: 16 }}>
           <h2>ตอบลูกค้า</h2>
