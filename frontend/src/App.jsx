@@ -33,6 +33,25 @@ function Shell() {
   const [inbox, setInbox] = useState({})
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => { setNavOpen(false) }, [loc.pathname])
+  // On phones tables turn into stacked cards (see styles.css); each cell gets its column title as a label.
+  useEffect(() => {
+    let raf = 0
+    const label = () => {
+      raf = 0
+      document.querySelectorAll('table.table').forEach((tb) => {
+        const heads = [...tb.querySelectorAll('thead th')].map((h) => h.textContent.trim())
+        tb.querySelectorAll('tbody tr').forEach((tr) => [...tr.children].forEach((td, i) => {
+          const v = heads[i] || ''
+          if (td.getAttribute('data-label') !== v) td.setAttribute('data-label', v)
+        }))
+      })
+    }
+    const queue = () => { if (!raf) raf = requestAnimationFrame(label) }
+    queue()
+    const obs = new MutationObserver(queue)
+    obs.observe(document.body, { subtree: true, childList: true, characterData: true })
+    return () => { obs.disconnect(); if (raf) cancelAnimationFrame(raf) }
+  }, [])
   const [expanded, setExpanded] = useState({ campaigns: true, leads: true, insights: false, admin: false })
   useEffect(() => {
     if (!user || user.mustChange) return undefined

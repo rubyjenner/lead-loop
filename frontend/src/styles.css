@@ -551,3 +551,19 @@ a.stat:hover { box-shadow: var(--shadow); transform: translateY(-2px); border-co
   .facts { grid-template-columns: 1fr; }
   .stat b { font-size: 26px; }
 }
+
+/* Phones: tables become stacked cards so there is nothing to scroll sideways */
+@media (max-width: 700px) {
+  .table-wrap { background: none; border: 0; overflow: visible; }
+  .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+  .table thead { display: none; }
+  .table tbody tr { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 10px; padding: 6px 0; overflow: hidden; }
+  .table tbody tr:hover { background: var(--paper); }
+  .table td { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 14px; border: 0; text-align: right; overflow-wrap: anywhere; }
+  .table td::before { content: attr(data-label); flex: none; max-width: 42%; color: var(--muted); font-size: 13px; text-align: left; }
+  .table td[data-label=""]::before { display: none; }
+  .table td[data-label=""] { justify-content: flex-end; flex-wrap: wrap; }
+  .table td:first-child { display: block; text-align: left; font-weight: 600; padding-top: 10px; padding-bottom: 6px; }
+  .table td:first-child::before { display: none; }
+  .table td[colspan] { display: block; text-align: center; }
+}
