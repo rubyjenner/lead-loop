@@ -31,6 +31,8 @@ function Shell() {
   const loc = useLocation()
   const { lang, setLang, t } = useLang()
   const [inbox, setInbox] = useState({})
+  const [navOpen, setNavOpen] = useState(false)
+  useEffect(() => { setNavOpen(false) }, [loc.pathname])
   const [expanded, setExpanded] = useState({ campaigns: true, leads: true, insights: false, admin: false })
   useEffect(() => {
     if (!user || user.mustChange) return undefined
@@ -60,8 +62,8 @@ function Shell() {
     {expanded[key] && <div className="nav-subitems">{children}</div>}
   </section>
   return (
-    <div className="shell">
-      <aside className="side">
+    <div className={`shell${navOpen ? ' nav-open' : ''}`}>
+      <aside className="side" id="side-nav">
         <div className="brand"><LoopMark size={26} /><span>LeadLoop</span></div>
         <nav aria-label="เมนูหลัก">
           {item('/overview', 'ภาพรวม')}
@@ -78,8 +80,12 @@ function Shell() {
           <button className="btn btn-quiet" onClick={() => logout()}>{t('me.logout', 'ออกจากระบบ')}</button>
         </div>
       </aside>
+      {navOpen && <button className="nav-scrim" aria-label="ปิดเมนู" onClick={() => setNavOpen(false)} />}
       <main className="main">
         <div className="topbar">
+          <button className="icon-btn theme-icon menu-btn" aria-label="เมนู" aria-expanded={navOpen} aria-controls="side-nav" onClick={() => setNavOpen((v) => !v)}>☰</button>
+          <span className="topbar-brand"><LoopMark size={22} /><span>LeadLoop</span></span>
+          <span className="topbar-spacer" />
           <div className="seg seg-sm" role="group" aria-label="ภาษา / Language"><button className={lang === 'th' ? 'seg-on' : ''} onClick={() => setLang('th')}>ไทย</button><button className={lang === 'en' ? 'seg-on' : ''} onClick={() => setLang('en')}>EN</button></div>
           <ThemeToggle compact />
           <NotificationBell />

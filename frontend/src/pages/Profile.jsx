@@ -47,7 +47,6 @@ export default function Profile() {
         <div className="pref-row"><span>{t('profile.lang', 'ภาษา')}</span>
           <div className="seg seg-sm" role="group"><button className={lang === 'th' ? 'seg-on' : ''} onClick={() => setLang('th')}>ไทย</button><button className={lang === 'en' ? 'seg-on' : ''} onClick={() => setLang('en')}>English</button></div>
         </div>
-        {lang === 'en' && <p className="muted small">{t('profile.note', 'ตอนนี้แปลเฉพาะเมนูและหน้านี้')}</p>}
       </section>
       <Toast msg={toast} onDone={() => setToast('')} />
     </div>

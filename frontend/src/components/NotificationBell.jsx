@@ -15,33 +15,50 @@ function ago(value, lang) {
 }
 
 // A short two-tone chime made with the Web Audio API (no sound file). Browsers only allow sound after the person has
-// clicked or typed on the page once, so the audio context is created on the first interaction.
+// clicked, tapped or typed on the page, so the audio context is created and resumed on the first interaction, and it is
+// resumed again just before every chime (a tab that was in the background or a phone that locked can suspend it).
 const SOUND_KEY = 'leadloop-bell-sound'
+const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown']
 let audioCtx
+function getCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return null
+  audioCtx = audioCtx || new AC()
+  return audioCtx
+}
 function unlockAudio() {
   try {
-    const AC = window.AudioContext || window.webkitAudioContext
-    if (!AC) return
-    audioCtx = audioCtx || new AC()
-    if (audioCtx.state === 'suspended') audioCtx.resume()
+    const ctx = getCtx()
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {})
   } catch { /* no sound available */ }
 }
-function chime() {
-  try {
+// Keeps listening until the context is really running, so the first tap on any page unlocks the sound.
+function armAudio() {
+  const handler = () => {
     unlockAudio()
-    if (!audioCtx || audioCtx.state !== 'running') return
-    const t0 = audioCtx.currentTime
+    if (audioCtx && audioCtx.state === 'running') UNLOCK_EVENTS.forEach((e) => window.removeEventListener(e, handler, true))
+  }
+  UNLOCK_EVENTS.forEach((e) => window.addEventListener(e, handler, true))
+  return () => UNLOCK_EVENTS.forEach((e) => window.removeEventListener(e, handler, true))
+}
+async function chime() {
+  try {
+    const ctx = getCtx()
+    if (!ctx) return
+    if (ctx.state !== 'running') await ctx.resume()
+    if (ctx.state !== 'running') return // still blocked: the person has not touched the page yet
+    const t0 = ctx.currentTime
     ;[[880, 0], [1320, 0.16]].forEach(([freq, at]) => {
-      const osc = audioCtx.createOscillator()
-      const gain = audioCtx.createGain()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
       osc.type = 'sine'
       osc.frequency.value = freq
       gain.gain.setValueAtTime(0.0001, t0 + at)
-      gain.gain.exponentialRampToValueAtTime(0.18, t0 + at + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32)
-      osc.connect(gain).connect(audioCtx.destination)
+      gain.gain.exponentialRampToValueAtTime(0.2, t0 + at + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.34)
+      osc.connect(gain).connect(ctx.destination)
       osc.start(t0 + at)
-      osc.stop(t0 + at + 0.34)
+      osc.stop(t0 + at + 0.36)
     })
   } catch { /* ignore */ }
 }
@@ -53,14 +70,17 @@ export default function NotificationBell() {
   const [data, setData] = useState({ unread_count: 0, items: [] })
   const [busy, setBusy] = useState(false)
   const [sound, setSound] = useState(soundOn)
-  const lastUnread = useRef(null) // null until the first load, so opening the page never plays a sound
+  const seen = useRef(null) // ids already shown; null until the first load, so opening a page never plays a sound
   const soundRef = useRef(sound)
   soundRef.current = sound
   async function load() {
     try {
       const d = await api('GET', '/notifications?limit=30')
-      if (lastUnread.current !== null && d.unread_count > lastUnread.current && soundRef.current) chime()
-      lastUnread.current = d.unread_count
+      // ring when an unread notification appears that we have not seen yet (comparing ids, not just the count,
+      // so a new one still rings while the person is reading or marking others as read)
+      const items = d.items || []
+      if (seen.current !== null && soundRef.current && items.some((i) => !i.read_at && !seen.current.has(i.id))) chime()
+      seen.current = new Set(items.map((i) => i.id))
       setData(d)
     } catch { /* bell stays quiet if API is unavailable */ }
   }
@@ -71,8 +91,9 @@ export default function NotificationBell() {
     if (next) chime() // lets the person hear what it sounds like
   }
   useEffect(() => {
-    window.addEventListener('pointerdown', unlockAudio, { once: true })
-    window.addEventListener('keydown', unlockAudio, { once: true })
+    const disarm = armAudio()
+    const onVisible = () => { if (document.visibilityState === 'visible') { unlockAudio(); load() } }
+    document.addEventListener('visibilitychange', onVisible)
     load()
     const controller = new AbortController()
     let retryTimer
@@ -83,7 +104,7 @@ export default function NotificationBell() {
     }
     connect()
     const timer = setInterval(load, 30000)
-    return () => { active = false; controller.abort(); clearTimeout(retryTimer); clearInterval(timer) }
+    return () => { active = false; controller.abort(); clearTimeout(retryTimer); clearInterval(timer); disarm(); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
   async function markRead(id) {
     try { await api('POST', `/notifications/${id}/read`); await load() } catch { /* keep panel usable */ }
