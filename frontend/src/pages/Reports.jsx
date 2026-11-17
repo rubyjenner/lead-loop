@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { LEAD_CHANNELS, LEAD_STATUS } from '../ui.jsx'
+import { LineChart, StackedBars } from './Charts.jsx'
 
 const BAND = { high: 'คะแนนสูง (50 ขึ้นไป)', mid: 'คะแนนกลาง (25–49)', low: 'คะแนนต่ำ (ต่ำกว่า 25)' }
+const OUTCOME = [
+  { key: 'open', label: 'ยังดำเนินการ', slot: 1 },
+  { key: 'lost', label: 'ไม่สำเร็จ', slot: 2 },
+  { key: 'closed', label: 'ปิดสำเร็จ', slot: 3 },
+]
+const outcomeParts = (c) => ({ open: Math.max(0, c.leads - c.closed - c.lost), lost: c.lost, closed: c.closed })
 const pct = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '-')
 
 function insights(d) {
@@ -45,6 +52,24 @@ export default function Reports() {
         <h2>ข้อสังเกตจากข้อมูลตอนนี้</h2>
         <ul>{insights(d).map((t, i) => <li key={i}>{t}</li>)}</ul>
       </section>
+      <div className="charts-grid">
+        <section className="panel wide">
+          <h2>ลีดใหม่ในแต่ละวัน (14 วันล่าสุด)</h2>
+          <LineChart points={(d.by_day || []).map((p) => ({ label: p.day.slice(8, 10) + '/' + p.day.slice(5, 7), value: p.leads }))} />
+        </section>
+        <section className="panel">
+          <h2>ผลตามช่องทาง</h2>
+          <StackedBars series={OUTCOME} rows={d.by_channel.map((c) => ({ label: LEAD_CHANNELS[c.channel] || c.channel, parts: outcomeParts(c) }))} />
+        </section>
+        <section className="panel">
+          <h2>ผลตามแคมเปญ</h2>
+          <StackedBars series={OUTCOME} rows={d.by_campaign.map((c) => ({ label: c.campaign, parts: outcomeParts(c) }))} />
+        </section>
+        <section className="panel wide">
+          <h2>ผลตามกลุ่มคะแนน</h2>
+          <StackedBars series={OUTCOME} rows={d.score_bands.map((b) => ({ label: BAND[b.band], parts: outcomeParts(b) }))} />
+        </section>
+      </div>
       <section className="panel" style={{ marginBottom: 18 }}>
         <h2>ขั้นตอนของลีด ({d.total} ลีด)</h2>
         <ul className="bd">

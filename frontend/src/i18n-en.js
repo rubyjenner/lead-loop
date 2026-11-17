@@ -1,5 +1,14 @@
 // Thai -> English phrase table used by the language switch (see i18n.jsx). Keys are the Thai text as it appears on screen.
 export const EN_MAP = {
+ "ลีดใหม่ในแต่ละวัน (14 วันล่าสุด)": "New leads per day (last 14 days)",
+ "ผลตามช่องทาง": "Results by channel",
+ "ผลตามแคมเปญ": "Results by campaign",
+ "ผลตามกลุ่มคะแนน": "Results by score band",
+ "ยังดำเนินการ": "In progress",
+ "ปิดสำเร็จ": "Closed (won)",
+ "(ไม่ระบุแคมเปญ)": "(No campaign)",
+ "รวม": "Total",
+ "คำอธิบายสี": "Color legend",
  "ลีดพร้อมส่งต่อ": "leads ready to hand off",
  "รอเซลส์รับ": "waiting for sales to pick up",
  "รอนานสุด": "longest wait",

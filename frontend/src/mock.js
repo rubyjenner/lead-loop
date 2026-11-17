@@ -285,7 +285,8 @@ export async function mockRequest(method, path, body, token) {
     return ok({ total: 40, funnel: { new: 12, nurturing: 9, qualified: 4, handed_off: 6, closed: 6, lost: 3 },
       by_channel: [{ channel: 'line', leads: 24, reached_sales: 11, closed: 5, lost: 2, avg_score: 38 }, { channel: 'mock', leads: 10, reached_sales: 4, closed: 1, lost: 1, avg_score: 31 }, { channel: 'web', leads: 6, reached_sales: 1, closed: 0, lost: 0, avg_score: 14 }],
       by_campaign: [{ campaign_id: 3, campaign: 'เปิดตัวหูฟังไร้สาย Aria', leads: 26, reached_sales: 12, closed: 5, lost: 1, avg_score: 41 }, { campaign_id: 2, campaign: 'ลดล้างสต็อกมือถือมือสอง', leads: 11, reached_sales: 3, closed: 1, lost: 2, avg_score: 22 }, { campaign_id: null, campaign: '(ไม่ระบุแคมเปญ)', leads: 3, reached_sales: 1, closed: 0, lost: 0, avg_score: 12 }],
-      score_bands: [{ band: 'high', leads: 13, closed: 5, lost: 1 }, { band: 'mid', leads: 14, closed: 1, lost: 1 }, { band: 'low', leads: 13, closed: 0, lost: 1 }] })
+      score_bands: [{ band: 'high', leads: 13, closed: 5, lost: 1 }, { band: 'mid', leads: 14, closed: 1, lost: 1 }, { band: 'low', leads: 13, closed: 0, lost: 1 }],
+      by_day: Array.from({ length: 14 }, (_, i) => { const dt = new Date(Date.now() - (13 - i) * 86400000); return { day: dt.toISOString().slice(0, 10), leads: [1, 0, 2, 3, 1, 0, 4, 2, 5, 3, 2, 6, 4, 3][i] } }) })
   }
   const owners = (globalThis.__owners ||= { 1: 'kritsada.t@vannessplus.com' })
   if (method === 'GET' && /^\/campaigns\/\d+\/past-results$/.test(path)) return ok({ enough: true, min_leads: 5, best_channel: 'line',

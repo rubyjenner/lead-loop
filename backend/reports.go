@@ -105,7 +105,27 @@ func registerReportRoutes(app fiber.Router, pool *pgxpool.Pool) {
 			}
 		}
 
+		// new leads per day, last 14 days (Thai calendar days), days without leads count as 0
+		byDay := []fiber.Map{}
+		dr, err := pool.Query(ctx, `
+			SELECT to_char(g.d, 'YYYY-MM-DD'), count(l.id)
+			FROM generate_series((now() AT TIME ZONE 'Asia/Bangkok')::date - 13, (now() AT TIME ZONE 'Asia/Bangkok')::date, interval '1 day') AS g(d)
+			LEFT JOIN leads l ON (l.created_at AT TIME ZONE 'Asia/Bangkok')::date = g.d::date AND l.anonymized_at IS NULL
+			GROUP BY g.d ORDER BY g.d`)
+		if err != nil {
+			return serverError(c, err)
+		}
+		defer dr.Close()
+		for dr.Next() {
+			var day string
+			var n int
+			if err := dr.Scan(&day, &n); err != nil {
+				return serverError(c, err)
+			}
+			byDay = append(byDay, fiber.Map{"day": day, "leads": n})
+		}
+
 		return c.JSON(fiber.Map{"total": total, "funnel": funnel, "by_channel": byChannel,
-			"by_campaign": byCampaign, "score_bands": bands})
+			"by_campaign": byCampaign, "score_bands": bands, "by_day": byDay})
 	})
 }
