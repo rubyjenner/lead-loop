@@ -3,7 +3,23 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { LEVEL, LEAD_STATUS, timeAgo } from '../ui.jsx'
-import { LevelTag } from './Leads.jsx'
+import { LineChart, StackedBars } from './Charts.jsx'
+
+const OUTCOME = [
+  { key: 'open', label: 'ยังดำเนินการ', slot: 1 },
+  { key: 'lost', label: 'ไม่สำเร็จ', slot: 2 },
+  { key: 'closed', label: 'ปิดสำเร็จ', slot: 3 },
+]
+const LEVELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', disqualified: 'ตัดสิทธิ์' }
+// leads created per day, last 14 days (browser date; list comes from /leads)
+function perDay(leads) {
+  const days = []
+  for (let i = 13; i >= 0; i--) { const t = new Date(); t.setDate(t.getDate() - i); days.push(t) }
+  const key = (t) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+  const n = {}
+  leads.forEach((l) => { if (l.created_at) { const k = key(new Date(l.created_at)); n[k] = (n[k] || 0) + 1 } })
+  return days.map((t) => ({ label: `${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')}`, value: n[key(t)] || 0 }))
+}
 
 export default function Overview() {
   const { user } = useAuth()
@@ -42,12 +58,14 @@ export default function Overview() {
         <Link className="stat" to="/leads"><b>{ready.length}</b><span>ลีดพร้อมส่งต่อเซลส์</span></Link>
         <Link className="stat" to="/leads"><b>{by('status', 'handed_off')}</b><span>ส่งต่อเซลส์แล้ว</span></Link>
       </div>
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <h2>ลีดใหม่ในแต่ละวัน (14 วันล่าสุด)</h2>
+        <LineChart points={perDay(leads)} />
+      </section>
       <div className="grid2">
         <section className="panel">
-          <h2>ลีดตามระดับ</h2>
-          <ul className="bd">
-            {['hot', 'warm', 'cold', 'disqualified'].map((k) => <li key={k}><span><LevelTag level={k} /></span><span className="pts">{by('level', k)}</span></li>)}
-          </ul>
+          <h2>ลีดตามระดับและผลลัพธ์</h2>
+          <StackedBars series={OUTCOME} rows={Object.keys(LEVELS).map((k) => ({ label: LEVELS[k], parts: { open: leads.filter((l) => l.level === k && l.status !== 'closed' && l.status !== 'lost').length, lost: leads.filter((l) => l.level === k && l.status === 'lost').length, closed: leads.filter((l) => l.level === k && l.status === 'closed').length } }))} />
         </section>
         <section className="panel">
           <h2>ลีดคะแนนสูงที่ยังเปิดอยู่</h2>

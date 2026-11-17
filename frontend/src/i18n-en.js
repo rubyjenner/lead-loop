@@ -508,6 +508,7 @@ export const EN_MAP = {
  "ลีด) ใช้ดูแนวโน้มเท่านั้น ยังสรุปผลไม่ได้": "leads). Use it only for trends; no conclusion yet",
  "ลีดคะแนนสูงที่ยังเปิดอยู่": "Open high-score leads",
  "ลีดตามระดับ": "Leads by level",
+ "ลีดตามระดับและผลลัพธ์": "Leads by level and outcome",
  "ลีดทันที ย้อนกลับไม่ได้ ยืนยันหรือไม่?": "leads immediately. This cannot be undone. Continue?",
  "ลีดทั้งหมด": "All leads",
  "ลีดที่คุณรับผิดชอบอยู่": "Leads you own",
