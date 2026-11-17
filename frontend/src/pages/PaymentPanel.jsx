@@ -50,6 +50,14 @@ export default function PaymentPanel({ leadId, leadStatus, canCreate = true, can
     try { await navigator.clipboard.writeText(url); setNote('คัดลอกลิงก์แล้ว') } catch { setNote(url) }
   }
 
+  const sendLink = (p) => {
+    if (!window.confirm(`ส่งลิงก์ชำระเงิน ยอด ${baht(p.amount)} บาท ให้ลูกค้าทางแชต? ตรวจยอดให้ถูกต้องก่อนส่ง`)) return
+    run(async () => {
+      await api('POST', `/payments/${p.id}/send-link`)
+      setNote('ส่งลิงก์ให้ลูกค้าทางแชตแล้ว')
+    })
+  }
+
   const cancel = (p) => {
     if (!window.confirm('ยกเลิกรายการชำระเงินนี้? ลูกค้าจะโอนตาม QR เดิมไม่ได้')) return
     run(() => api('POST', `/payments/${p.id}/cancel`))
@@ -91,11 +99,17 @@ export default function PaymentPanel({ leadId, leadStatus, canCreate = true, can
               <div className="muted small">
                 {p.reference} · {p.description || 'ไม่มีชื่อสินค้า'} · สร้างโดย {p.created_by} · {when(p.created_at)}
                 {p.status === 'pending' && <> · หมดเวลา {when(p.expires_at)}</>}
+                {p.status === 'pending' && p.link_sent_at && <> · ส่งลิงก์ในแชตแล้ว {when(p.link_sent_at)}</>}
                 {p.status === 'paid' && <> · ยืนยันโดย {p.confirmed_by} {when(p.paid_at)}{p.provider_ref ? ` · อ้างอิง ${p.provider_ref}` : ''}</>}
               </div>
             </div>
             {p.status === 'pending' && (
               <div className="pay-actions">
+                {canCreate && p.can_send_link && (
+                  <button className="btn btn-primary" onClick={() => sendLink(p)} disabled={busy}>
+                    {p.link_sent_at ? 'ส่งลิงก์ในแชตอีกครั้ง' : 'ส่งลิงก์ในแชต'}
+                  </button>
+                )}
                 <button className="btn btn-quiet" onClick={() => copyLink(p)}>คัดลอกลิงก์</button>
                 <a className="btn btn-quiet" href={p.pay_path} target="_blank" rel="noreferrer">เปิดหน้าชำระเงิน</a>
                 {canCreate && <button className="btn btn-quiet" onClick={() => cancel(p)} disabled={busy}>ยกเลิก</button>}

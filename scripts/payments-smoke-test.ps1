@@ -92,6 +92,14 @@ Check 'A: confirming a cancelled request -> 409 or 403' ((Call 'POST' "/payments
 $p2 = Call 'POST' "/leads/$a/payments" '{"amount":11900.50,"expires_in_hours":2}'
 Check 'A: after cancel a new request with a manual amount works' ($p2.Status -eq 201 -and $p2.Body.amount_source -eq 'manual' -and [double]$p2.Body.amount -eq 11900.5)
 Check 'A: bad amount (3 decimals) -> 400' ((Call 'POST' "/leads/$a/payments" '{"amount":10.123}').Status -eq 400)
+Check 'A: send-link on a cancelled request -> 409' ((Call 'POST' "/payments/$($p.Body.id)/send-link").Status -eq 409)
+$sl = Call 'POST' "/payments/$($p2.Body.id)/send-link"
+Check 'A: send-link -> 200, or 409 when APP_BASE_URL is not set' ($sl.Status -eq 200 -or ($sl.Status -eq 409 -and "$($sl.Body.error)" -like '*APP_BASE_URL*'))
+if ($sl.Status -eq 200) {
+  $rep = @((Call 'GET' "/leads/$a/replies").Body)
+  Check 'A: the chat reply holds the pay link' ($rep.Count -ge 1 -and "$($rep[0].body)" -like "*/pay/$($p2.Body.token)*")
+  Check 'A: the request shows when the link was sent' ($null -ne @((Call 'GET' "/payments?lead_id=$a").Body)[0].link_sent_at)
+}
 
 Write-Host "`n== B: consent withdrawn cancels an unpaid request ==" -ForegroundColor Cyan
 $b = NewQualifiedLead 'Pay smoke B'
@@ -99,6 +107,7 @@ $pb = Call 'POST' "/leads/$b/payments"
 Check 'B: request created' ($pb.Status -eq 201)
 $null = Call 'POST' "/leads/$b/consent" '{"kind":"general","action":"withdrawn","text_version":"v1"}'
 Check 'B: the request was cancelled by the database trigger' ((PayStatus $b) -eq 'cancelled')
+Check 'B: send-link for a withdrawn lead -> 409' ((Call 'POST' "/payments/$($pb.Body.id)/send-link").Status -eq 409)
 Check 'B: public link no longer open' ((Call 'GET' "/public/pay/$($pb.Body.token)" -NoAuth).Body.status -eq 'cancelled')
 Check 'B: no new request for a lead without consent -> 409' ((Call 'POST' "/leads/$b/payments").Status -eq 409)
 

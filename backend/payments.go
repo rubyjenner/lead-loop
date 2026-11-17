@@ -120,6 +120,7 @@ func initPayments(ctx context.Context, pool *pgxpool.Pool) error {
 			provider_ref  TEXT,
 			cancelled_at  TIMESTAMPTZ
 		)`,
+		`ALTER TABLE payments ADD COLUMN IF NOT EXISTS link_sent_at TIMESTAMPTZ`,
 		`CREATE INDEX IF NOT EXISTS payments_lead_idx ON payments(lead_id)`,
 		`CREATE INDEX IF NOT EXISTS payments_status_idx ON payments(status)`,
 		// one open request per lead
@@ -161,6 +162,7 @@ func registerPaymentRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	app.Post("/leads/:id/payments", sales, a.create)
 	app.Get("/payments", a.list)
 	app.Post("/payments/:id/cancel", sales, a.cancel)
+	app.Post("/payments/:id/send-link", sales, a.sendLink)
 	app.Post("/payments/:id/confirm", confirmer, a.confirm)
 }
 
@@ -332,10 +334,11 @@ func (a *paymentAPI) list(c *fiber.Ctx) error {
 	leadFilter := c.QueryInt("lead_id", 0)
 	rows, err := a.pool.Query(c.Context(), `
 		SELECT x.id, x.lead_id, x.display_name, x.description, x.amount, x.currency, x.amount_source, x.provider,
-		       x.eff, x.expires_at, x.created_by, x.created_at, x.paid_at, x.confirmed_by, x.provider_ref, x.token
+		       x.eff, x.expires_at, x.created_by, x.created_at, x.paid_at, x.confirmed_by, x.provider_ref, x.token, x.link_sent_at, x.channel
 		FROM (
 		  SELECT p.id, p.lead_id, l.display_name, p.description, p.amount::float8 AS amount, p.currency, p.amount_source,
 		         p.provider, p.expires_at, p.created_by, p.created_at, p.paid_at, p.confirmed_by, p.provider_ref, p.token,
+		         p.link_sent_at, l.channel,
 		         CASE WHEN p.status='pending' AND p.expires_at <= now() THEN 'expired' ELSE p.status END AS eff
 		  FROM payments p JOIN leads l ON l.id = p.lead_id
 		  WHERE ($2::bigint = 0 OR p.lead_id = $2)
@@ -349,19 +352,20 @@ func (a *paymentAPI) list(c *fiber.Ctx) error {
 	out := []fiber.Map{}
 	for rows.Next() {
 		var id, lid int64
-		var name, desc, cur, src, prov, eff, createdBy, token string
+		var name, desc, cur, src, prov, eff, createdBy, token, channel string
 		var amount float64
 		var expires, created time.Time
-		var paidAt *time.Time
+		var paidAt, linkSent *time.Time
 		var confirmedBy, provRef *string
 		if err := rows.Scan(&id, &lid, &name, &desc, &amount, &cur, &src, &prov, &eff, &expires, &createdBy,
-			&created, &paidAt, &confirmedBy, &provRef, &token); err != nil {
+			&created, &paidAt, &confirmedBy, &provRef, &token, &linkSent, &channel); err != nil {
 			return serverError(c, err)
 		}
 		m := fiber.Map{"id": id, "reference": paymentRef(id), "lead_id": lid, "display_name": name, "description": desc,
 			"amount": amount, "currency": cur, "amount_source": src, "provider": prov, "status": eff,
 			"expires_at": expires, "created_by": createdBy, "created_at": created, "paid_at": paidAt,
-			"confirmed_by": confirmedBy, "provider_ref": provRef}
+			"confirmed_by": confirmedBy, "provider_ref": provRef, "link_sent_at": linkSent,
+			"can_send_link": channel == publicChatChannel || channel == lineChannel}
 		if eff == "pending" { // only an open request exposes its link
 			m["pay_path"] = "/pay/" + token
 		}

@@ -86,43 +86,9 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 		if body == "" || len([]rune(body)) > staffReplyMaxRunes {
 			return leadErr(c, 400, "ข้อความต้องไม่ว่าง และยาวไม่เกิน 500 ตัวอักษร")
 		}
-		var channel string
-		var extID *string
-		var ok bool
-		err = pool.QueryRow(c.Context(), `SELECT channel, channel_user_id,
-			(consent_general AND consent_withdrawn_at IS NULL AND anonymized_at IS NULL) FROM leads WHERE id=$1`, id).Scan(&channel, &extID, &ok)
-		if err != nil {
-			return leadErr(c, 404, "lead not found")
-		}
-		if channel != publicChatChannel && channel != lineChannel {
-			return leadErr(c, 409, "ตอบได้เฉพาะลีดจากแชตหน้าเว็บหรือ LINE")
-		}
-		if !ok {
-			return leadErr(c, 409, "ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้")
-		}
-		if channel == lineChannel {
-			// LINE: send first, store only if LINE accepted it, so the history never shows a message the customer did not get
-			if !lineEnabled() {
-				return leadErr(c, 503, "ยังไม่ได้ตั้งค่า LINE ในระบบ")
-			}
-			if extID == nil || !lineUserIDRe.MatchString(*extID) {
-				return leadErr(c, 409, "ลีดนี้ไม่มีรหัสผู้ใช้ LINE ที่ใช้ส่งได้")
-			}
-			client := &lineClient{token: lineToken(), http: &http.Client{Timeout: 8 * time.Second}}
-			if err := client.push(c.Context(), *extID, lineText(body)); err != nil {
-				log.Printf("line push for lead %d: %v", id, err) // details stay in the log, not in the response
-				return leadErr(c, 502, "ส่งไปที่ LINE ไม่สำเร็จ (ลูกค้าอาจบล็อกบัญชี หรือโควตาข้อความเต็ม) ลองอีกครั้งหรือติดต่อนอกระบบ")
-			}
-		}
-		email := ""
-		if u := currentUser(c); u != nil {
-			email = u.Email
-		}
-		var out staffReplyRow
-		err = pool.QueryRow(c.Context(), `INSERT INTO staff_replies (lead_id, body, sent_by) VALUES ($1,$2,$3)
-			RETURNING id, body, sent_by, created_at`, id, body, email).Scan(&out.ID, &out.Body, &out.SentBy, &out.CreatedAt)
-		if err != nil {
-			return serverError(c, err)
+		out, err := sendLeadChat(c, pool, id, body)
+		if out == nil {
+			return err // the reply was already written
 		}
 		auditUser(c, pool, "lead_staff_reply", "lead:"+strconv.FormatInt(id, 10), "")
 		return c.Status(201).JSON(out)
@@ -156,6 +122,52 @@ func registerStaffReplyRoutes(app fiber.Router, pool *pgxpool.Pool) {
 	registerRetentionRoutes(app, pool)
 	registerFeedbackRoutes(app, pool)
 	registerProductImageUpload(app, pool) // needs login too, kept here so main.go needs no new line
+}
+
+// sendLeadChat delivers one staff-written message to the customer of a web or LINE lead and stores it.
+// The lead page reply box and "send the payment link" both use it, so the consent and channel rules are in
+// one place. On a refusal it writes the error response itself and returns (nil, thatResult); on success it
+// returns the stored row.
+func sendLeadChat(c *fiber.Ctx, pool *pgxpool.Pool, id int64, body string) (*staffReplyRow, error) {
+	var channel string
+	var extID *string
+	var ok bool
+	err := pool.QueryRow(c.Context(), `SELECT channel, channel_user_id,
+		(consent_general AND consent_withdrawn_at IS NULL AND anonymized_at IS NULL) FROM leads WHERE id=$1`, id).Scan(&channel, &extID, &ok)
+	if err != nil {
+		return nil, leadErr(c, 404, "lead not found")
+	}
+	if channel != publicChatChannel && channel != lineChannel {
+		return nil, leadErr(c, 409, "ตอบได้เฉพาะลีดจากแชตหน้าเว็บหรือ LINE")
+	}
+	if !ok {
+		return nil, leadErr(c, 409, "ลีดนี้ไม่ได้ให้ความยินยอม หรือถอนความยินยอมแล้ว จึงส่งข้อความไม่ได้")
+	}
+	if channel == lineChannel {
+		// LINE: send first, store only if LINE accepted it, so the history never shows a message the customer did not get
+		if !lineEnabled() {
+			return nil, leadErr(c, 503, "ยังไม่ได้ตั้งค่า LINE ในระบบ")
+		}
+		if extID == nil || !lineUserIDRe.MatchString(*extID) {
+			return nil, leadErr(c, 409, "ลีดนี้ไม่มีรหัสผู้ใช้ LINE ที่ใช้ส่งได้")
+		}
+		client := &lineClient{token: lineToken(), http: &http.Client{Timeout: 8 * time.Second}}
+		if err := client.push(c.Context(), *extID, lineText(body)); err != nil {
+			log.Printf("line push for lead %d: %v", id, err) // details stay in the log, not in the response
+			return nil, leadErr(c, 502, "ส่งไปที่ LINE ไม่สำเร็จ (ลูกค้าอาจบล็อกบัญชี หรือโควตาข้อความเต็ม) ลองอีกครั้งหรือติดต่อนอกระบบ")
+		}
+	}
+	email := ""
+	if u := currentUser(c); u != nil {
+		email = u.Email
+	}
+	var out staffReplyRow
+	err = pool.QueryRow(c.Context(), `INSERT INTO staff_replies (lead_id, body, sent_by) VALUES ($1,$2,$3)
+		RETURNING id, body, sent_by, created_at`, id, body, email).Scan(&out.ID, &out.Body, &out.SentBy, &out.CreatedAt)
+	if err != nil {
+		return nil, serverError(c, err)
+	}
+	return &out, nil
 }
 
 // GET /public/chat/replies?session_id=...&after=12 -> replies newer than id 12 for this customer's own lead
