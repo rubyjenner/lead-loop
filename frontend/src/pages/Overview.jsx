@@ -58,16 +58,17 @@ export default function Overview() {
         <Link className="stat" to="/leads"><b>{ready.length}</b><span>ลีดพร้อมส่งต่อเซลส์</span></Link>
         <Link className="stat" to="/leads"><b>{by('status', 'handed_off')}</b><span>ส่งต่อเซลส์แล้ว</span></Link>
       </div>
-      <section className="panel" style={{ marginBottom: 16 }}>
+      <div className="grid2">
+      <section className="panel">
         <h2>ลีดใหม่ในแต่ละวัน (14 วันล่าสุด)</h2>
         <LineChart points={perDay(leads)} />
       </section>
-      <div className="grid2">
         <section className="panel">
           <h2>ลีดตามระดับและผลลัพธ์</h2>
           <StackedBars series={OUTCOME} rows={Object.keys(LEVELS).map((k) => ({ label: LEVELS[k], parts: { open: leads.filter((l) => l.level === k && l.status !== 'closed' && l.status !== 'lost').length, lost: leads.filter((l) => l.level === k && l.status === 'lost').length, closed: leads.filter((l) => l.level === k && l.status === 'closed').length } }))} />
         </section>
-        <section className="panel">
+      </div>
+      <section className="panel" style={{ marginTop: 16 }}>
           <h2>ลีดคะแนนสูงที่ยังเปิดอยู่</h2>
           {top.length === 0 ? <p className="muted">ยังไม่มีลีด</p> : (
             <ul className="bd">
@@ -75,7 +76,6 @@ export default function Overview() {
             </ul>
           )}
         </section>
-      </div>
     </div>
   )
 }
