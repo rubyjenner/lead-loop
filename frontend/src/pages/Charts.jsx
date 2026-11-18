@@ -5,6 +5,13 @@ import { translate, useLang } from '../i18n.jsx'
 // (--series-1..3, validated light and dark). Every chart has a hover/touch tooltip, a legend when there are 2+
 // series, and the same numbers are in the tables below it, so nothing depends on color alone.
 
+export const OUTCOME = [
+  { key: 'open', label: 'ยังดำเนินการ', slot: 1 },
+  { key: 'lost', label: 'ไม่สำเร็จ', slot: 2 },
+  { key: 'closed', label: 'ปิดสำเร็จ', slot: 3 },
+]
+export const outcomeParts = (c) => ({ open: Math.max(0, c.leads - c.closed - c.lost), lost: c.lost, closed: c.closed })
+
 function useTr() {
   const { lang } = useLang()
   return (x) => (lang === 'en' ? translate(x) : x)

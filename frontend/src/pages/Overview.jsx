@@ -3,13 +3,10 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { LEVEL, LEAD_STATUS, timeAgo } from '../ui.jsx'
-import { LineChart, StackedBars } from './Charts.jsx'
+import { LineChart, StackedBars, OUTCOME, outcomeParts } from './Charts.jsx'
+import { LEAD_CHANNELS } from '../ui.jsx'
 
-const OUTCOME = [
-  { key: 'open', label: 'ยังดำเนินการ', slot: 1 },
-  { key: 'lost', label: 'ไม่สำเร็จ', slot: 2 },
-  { key: 'closed', label: 'ปิดสำเร็จ', slot: 3 },
-]
+const BAND = { high: 'คะแนนสูง (50 ขึ้นไป)', mid: 'คะแนนกลาง (25–49)', low: 'คะแนนต่ำ (ต่ำกว่า 25)' }
 const LEVELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', disqualified: 'ตัดสิทธิ์' }
 // leads created per day, last 14 days (browser date; list comes from /leads)
 function perDay(leads) {
@@ -26,13 +23,13 @@ export default function Overview() {
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    Promise.all([api('GET', '/leads'), api('GET', '/contents?status=pending_approval'), api('GET', '/campaigns'), api('GET', '/inbox')])
-      .then(([leads, pending, campaigns, inbox]) => setD({ leads, pending, campaigns, inbox }))
+    Promise.all([api('GET', '/leads'), api('GET', '/contents?status=pending_approval'), api('GET', '/campaigns'), api('GET', '/inbox'), api('GET', '/reports/summary').catch(() => null)])
+      .then(([leads, pending, campaigns, inbox, rep]) => setD({ leads, pending, campaigns, inbox, rep }))
       .catch((e) => setError(e.message))
   }, [])
   if (error) return <div className="page"><div className="alert alert-error" role="alert">{error}</div></div>
   if (!d) return <div className="page muted pad">กำลังโหลด…</div>
-  const { leads, pending, campaigns, inbox } = d
+  const { leads, pending, campaigns, inbox, rep } = d
   const todo = [
     inbox.leads_ready > 0 && { to: '/leads', text: `${inbox.leads_ready} ลีดพร้อมส่งต่อ รอเซลส์รับ${inbox.leads_ready_oldest ? ` (รอนานสุด ${timeAgo(inbox.leads_ready_oldest).replace(' ที่แล้ว', '')})` : ''}` },
     inbox.leads_unassigned > 0 && { to: '/leads', text: `${inbox.leads_unassigned} ลีดที่ถึงเกณฑ์แต่ยังไม่มีผู้รับผิดชอบ` },
@@ -68,6 +65,22 @@ export default function Overview() {
           <StackedBars series={OUTCOME} rows={Object.keys(LEVELS).map((k) => ({ label: LEVELS[k], parts: { open: leads.filter((l) => l.level === k && l.status !== 'closed' && l.status !== 'lost').length, lost: leads.filter((l) => l.level === k && l.status === 'lost').length, closed: leads.filter((l) => l.level === k && l.status === 'closed').length } }))} />
         </section>
       </div>
+      {rep && (
+        <div className="grid2" style={{ marginTop: 16 }}>
+          <section className="panel">
+            <h2>ผลตามช่องทาง</h2>
+            <StackedBars series={OUTCOME} rows={rep.by_channel.map((c) => ({ label: LEAD_CHANNELS[c.channel] || c.channel, parts: outcomeParts(c) }))} />
+          </section>
+          <section className="panel">
+            <h2>ผลตามแคมเปญ</h2>
+            <StackedBars series={OUTCOME} rows={rep.by_campaign.map((c) => ({ label: c.campaign, parts: outcomeParts(c) }))} />
+          </section>
+          <section className="panel">
+            <h2>ผลตามกลุ่มคะแนน</h2>
+            <StackedBars series={OUTCOME} rows={rep.score_bands.map((b) => ({ label: BAND[b.band], parts: outcomeParts(b) }))} />
+          </section>
+        </div>
+      )}
       <section className="panel" style={{ marginTop: 16 }}>
           <h2>ลีดคะแนนสูงที่ยังเปิดอยู่</h2>
           {top.length === 0 ? <p className="muted">ยังไม่มีลีด</p> : (
